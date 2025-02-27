@@ -1,54 +1,66 @@
-Cıvata Sertliği Ne Demek?
-Cıvata sertliği, bir cıvatanın üzerine yük bindiğinde ne kadar esnediğini veya sıkıştığını ölçen bir özelliktir. Bir cıvatayı, üzerine bastığınızda esneyen ama kopmayan bir yay gibi düşünebilirsiniz. Eğer cıvata çok esnerse, bağlı olduğu parçaları iyi tutamaz; çok sert olursa, kırılabilir. Bu yüzden, cıvatanın ne kadar esneyeceğini hesaplamak, özellikle makine parçalarını birleştirirken çok önemlidir.
+Cıvata Sertliği Hesaplama: Detaylı Analiz
 
-Neden Bunu Hesaplıyoruz?
-Cıvatalar, iki veya daha fazla parçayı bir arada tutar (örneğin, bir motor kapağını gövdesine bağlar). Bu parçaların sağlam durması için cıvatanın ne kadar yüke dayanabileceğini ve ne kadar esneyeceğini bilmemiz gerekir. İşte cıvata sertliği, bize bunu anlatır.
+Giriş
+Cıvata sertliği hesaplayıcısı, cıvatalı birleşmelerin tasarımında önemli bir araçtır. Bu analiz, cıvata sertliğinin ne olduğunu, neyi hesapladığını, nasıl hesaplandığını ve uygulamada nasıl kullanıldığını detaylı bir şekilde ele alır. Amacımız, sıfırdan bilmeyen bir kullanıcıya, hatta teknik bilgisi olmayan birine, konuyu anlaşılır bir şekilde aktarmaktır.
 
-Cıvata Sertliği Nasıl Hesaplanır?
-Cıvatanın iki önemli kısmı vardır: gövde (şank) ve dişli kısım. Gövde, cıvatanın düz ve kalın kısmıdır; dişli kısım ise somunun vidalandığı, tırtıklı bölgedir. Bu iki kısmın esneme miktarı farklıdır, çünkü şekilleri ve boyutları farklıdır. Biz de bu iki kısmı ayrı ayrı hesaplayıp, sonra birleştiriyoruz.
+Cıvata Sertliği: Tanım ve Önemi
+Cıvata sertliği, bir cıvatanın yük altında ne kadar esnediğini ölçen bir parametredir. Bir cıvatayı, üzerine bastığınızda esneyen ama kopmayan bir yay gibi düşünebilirsiniz. Eğer cıvata çok esnerse, bağlı olduğu parçaları iyi tutamaz; çok sert olursa, kırılabilir. Bu, özellikle makine parçalarını birleştirirken, örneğin bir motor kapağını gövdesine bağlarken, çok önemlidir.
+Cıvata sertliği, cıvatalı birleşmelerin performansını anlamak için kritik öneme sahiptir. Bu, özellikle yük altında birleşmenin gevşememesi, parçaların ayrılmaması ve genel yapının güvenilirliği için önemlidir. Araştırma, cıvata sertliğinin, cıvatanın gövde (şank) ve dişli kısımlarının ayrı ayrı sertliklerinin seri olarak birleştirilmesiyle hesaplandığını gösteriyor (MechaniCalc Bolted Joint Analysis).
 
-Adım Adım Hesaplama:
+Neyi Hesaplar?
+Cıvata sertliği hesaplayıcısı, cıvatanın ne kadar yük altında esneceğini hesaplar. Bu, cıvatanın iki ana kısmını dikkate alır:
+- Gövde (Şank): Cıvatanın düz, dişsiz kısmı. Bu, genellikle birleştirilen parçaların içinden geçen kısmıdır.
+- Dişli Kısım: Somunun vidalandığı, tırtıklı bölge. Bu, cıvatanın ucunda bulunur ve yük altında esneme katkısı sağlar.
+Hesaplama, bu iki kısmın esneme miktarını birleştirerek toplam cıvata sertliğini bulur. Sonuç, cıvatanın 1 mm esnemesi için ne kadar kuvvete ihtiyaç duyduğunu gösterir (N/mm cinsinden). Bu, cıvatanın ne kadar sağlam olduğunu ve ne kadar yük taşıyabileceğini anlamak için kullanılır.
 
-Gerekli Bilgiler:
-- Cıvata boyutu: Örneğin, M10 (çapı 10 mm olan bir cıvata).
-- Gövde uzunluğu (L_shank): Cıvatanın düz kısmının ne kadar uzun olduğu (mm). Mesela, cıvata iki metal plakayı birleştiriyorsa, bu genellikle plakaların toplam kalınlığıdır.
-- Dişli kısım uzunluğu (L_thread): Dişli kısmın yük altında kalan uzunluğu (mm). Bu, somunun vidalandığı yerin ne kadarının esnediğidir (eğer yoksa 0 olur).
-- Malzeme özelliği (E_bolt): Cıvatanın ne kadar esnek veya sert olduğunu gösteren bir sayı. Çelik için bu genelde 200,000’dir (buna "elastiklik modülü" diyoruz).
-- Alanlar: Gövde ve dişli kısmın kesit alanları (mm²). Bunlar cıvata boyutuna göre hazır tablolardan gelir (örneğin, M10 için gövde alanı 78.54, dişli alan 58.0).
+Nasıl Hesaplanır?
+Hesaplama, mekanik mühendislik prensiplerine dayanır ve şu adımları izler:
 
-Gövde Sertliğini Bulma:
-Gövde kısmı için şöyle bir formül kullanıyoruz:
-$$ k_{\text{gövde}} = \frac{E_{\text{bolt}} \times A_{\text{gövde}}}{L_{\text{gövde}}} $$
-Örnek: Çelik bir M10 cıvata için, $$ E = 200,000 $$, $$ A_{\text{gövde}} = 78.54 $$, $$ L_{\text{gövde}} = 50 $$ ise:
-$$ k_{\text{gövde}} = \frac{200,000 \times 78.54}{50} = 314,160 $$ (bu, N/mm cinsinden bir sayıdır).
+Gerekli Veriler:
+- Cıvata boyutu (örneğin M10, M12 gibi). Bu, cıvatanın çapını ve standart kesit alanlarını belirler.
+- Gövde uzunluğu (L_shank): Cıvatanın düz kısmının gerginlikteki uzunluğu, genellikle kavrama uzunluğuna (birleştirilen parçaların toplam kalınlığı) eşittir.
+- Dişli kısım uzunluğu (L_thread): Dişli kısmın gerginlikteki uzunluğu, eğer gövde kavrama uzunluğunu tamamen kapsıyorsa sıfır olabilir.
+- Malzeme elastiklik modülü (E_bolt): Cıvatanın ne kadar esnek olduğunu gösteren bir sayı, çelik için genellikle 200,000 MPa.
+- Kesit alanları (A_gövde ve A_dişli) standart tablolardan alınır. Örneğin, M10 için:
+  - $$ A_{\text{gövde}} = 78.54 \, \text{mm}^2 $$ (nominal alan),
+  - $$ A_{\text{dişli}} = 58.0 \, \text{mm}^2 $$ (çekme gerilme alanı).
 
-Dişli Kısım Sertliğini Bulma:
-Dişli kısım için de benzer bir formül var:
-$$ k_{\text{dişli}} = \frac{E_{\text{bolt}} \times A_{\text{dişli}}}{L_{\text{dişli}}} $$
-Örnek: Aynı cıvata için, $$ A_{\text{dişli}} = 58.0 $$, $$ L_{\text{dişli}} = 20 $$ ise:
-$$ k_{\text{dişli}} = \frac{200,000 \times 58.0}{20} = 580,000 $$.
+Gövde Sertliği Hesaplama:
+Gövde kısmı için şu formül kullanılır:
+$$ k_{\text{gövde}} = \frac{E_{\text{bolt}} \times A_{\text{gövde}}}{L_{\text{shank}}} $$
+Bu, gövdenin ne kadar sert olduğunu gösterir. Örneğin, $$ E_{\text{bolt}} = 200,000 $$, $$ A_{\text{gövde}} = 78.54 $$, $$ L_{\text{shank}} = 50 $$ ise:
+$$ k_{\text{gövde}} = \frac{200,000 \times 78.54}{50} = 314,160 \, \text{N/mm} $$
 
-Toplam Sertliği Bulma:
-Gövde ve dişli kısım, bir zincir gibi birbirine bağlıdır. Zincirin zayıf halkası ne kadar esnerse, tüm zincir o kadar esner. Bu yüzden, toplam sertlik için özel bir formül kullanıyoruz:
-$$ k_{\text{toplam}} = \frac{1}{\frac{1}{k_{\text{gövde}}} + \frac{1}{k_{\text{dişli}}}} $$
-Örnek: $$ k_{\text{gövde}} = 314,160 $$ ve $$ k_{\text{dişli}} = 580,000 $$ ise:
-$$ k_{\text{toplam}} = \frac{1}{\frac{1}{314,160} + \frac{1}{580,000}} \approx 203,769 \, \text{N/mm} $$.
-Eğer dişli kısım yoksa ($$ L_{\text{dişli}} = 0 $$), toplam sertlik sadece gövde sertliğine eşit olur.
+Dişli Kısım Sertliği Hesaplama:
+Dişli kısım için benzer bir formül kullanılır:
+$$ k_{\text{dişli}} = \frac{E_{\text{bolt}} \times A_{\text{dişli}}}{L_{\text{thread}}} $$
+Eğer $$ L_{\text{thread}} = 0 $$ ise, bu kısım hesaba katılmaz (sonsuz sertlik kabul edilir). Örneğin, $$ A_{\text{dişli}} = 58.0 $$, $$ L_{\text{thread}} = 20 $$ ise:
+$$ k_{\text{dişli}} = \frac{200,000 \times 58.0}{20} = 580,000 \, \text{N/mm} $$
 
-Bu Sayılar Ne Anlama Geliyor?
-Sonuç, cıvatanın sertliğini "N/mm" cinsinden verir. Bu, cıvatanın 1 mm esnemesi için ne kadar kuvvete (Newton cinsinden) ihtiyaç duyduğunu gösterir. Sayı büyüdükçe, cıvata o kadar serttir, yani daha az esner.
+Toplam Cıvata Sertliği:
+Gövde ve dişli kısım, seri olarak birleştirildiği için toplam sertlik şu formülle bulunur:
+$$ k_{\text{bolt}} = \frac{1}{\frac{1}{k_{\text{gövde}}} + \frac{1}{k_{\text{dişli}}}} $$
+Örnekte, $$ k_{\text{gövde}} = 314,160 $$, $$ k_{\text{dişli}} = 580,000 $$ ise:
+$$ k_{\text{bolt}} = \frac{1}{\frac{1}{314,160} + \frac{1}{580,000}} \approx 203,769 \, \text{N/mm} $$
 
-Örnek Bir Durum:
-Diyelim ki bir M10 cıvata ile iki metal plakayı birleştiriyorsunuz. Plakalar toplam 50 mm kalınlıkta, ve cıvatanın dişli kısmı somunda 20 mm yük altında. Çelik kullanıyorsanız:
+L_shank ve L_thread Nasıl Belirlenir?
+- L_shank (Gövde Uzunluğu): Bu, cıvatanın düz kısmının gerginlikteki uzunluğudur. Genellikle kavrama uzunluğu (birleştirilen parçaların toplam kalınlığı) olarak alınır, eğer gövde kavrama uzunluğundan uzunsa.
+- L_thread (Dişli Kısım Uzunluğu): Bu, dişli kısmın gerginlikteki uzunluğudur. Eğer gövde kavrama uzunluğunu tamamen kapsıyorsa, $$ L_{\text{thread}} = 0 $$ olur. Eğer kavrama uzunluğu gövdeden uzunsa, $$ L_{\text{thread}} = \text{kavrama uzunluğu} - L_{\text{shank}} $$ olur.
+
+Standart Cıvata Boyutları ve Özellikleri
+Aşağıda, yaygın metrik cıvata boyutları için kesit alanları tablo halinde verilmiştir:
+- M6: Nominal Çap: 6 mm, $$ A_{\text{gövde}} = 28.27 \, \text{mm}^2 $$, $$ A_{\text{dişli}} = 20.1 \, \text{mm}^2 $$
+- M8: Nominal Çap: 8 mm, $$ A_{\text{gövde}} = 50.27 \, \text{mm}^2 $$, $$ A_{\text{dişli}} = 36.6 \, \text{mm}^2 $$
+- M10: Nominal Çap: 10 mm, $$ A_{\text{gövde}} = 78.54 \, \text{mm}^2 $$, $$ A_{\text{dişli}} = 58.0 \, \text{mm}^2 $$
+- M12: Nominal Çap: 12 mm, $$ A_{\text{gövde}} = 113.10 \, \text{mm}^2 $$, $$ A_{\text{dişli}} = 84.3 \, \text{mm}^2 $$
+Bu değerler, standart mühendislik tablolarından alınmıştır (Eurocode Applied Bolt Design Properties).
+
+Örnek Hesaplama ve Uygulama
+Bir örnekle konuyu netleştirelim. Diyelim ki bir M10 cıvata, gövde uzunluğu 50 mm, dişli kısım uzunluğu 20 mm, ve $$ E_{\text{bolt}} = 200,000 \, \text{MPa} $$:
 - Gövde sertliği: $$ 314,160 \, \text{N/mm} $$
-- Dişli sertlik: $$ 580,000 \, \text{N/mm} $$
+- Dişli kısım sertliği: $$ 580,000 \, \text{N/mm} $$
 - Toplam sertlik: $$ 203,769 \, \text{N/mm} $$
-Bu, cıvatanın oldukça sağlam olduğunu ve az esneyeceğini gösterir.
+Bu, cıvatanın oldukça sağlam olduğunu ve az esneyeceğini gösterir. Bu tür hesaplamalar, cıvatalı birleşmelerin tasarımında kullanılır ve sonuçlar, mekanik mühendislik kaynaklarıyla karşılaştırılabilir (MechaniCalc Bolted Joint Analysis Calculator).
 
-Programa Bunu Neden Ekledik?
-Bu program, yukarıdaki hesaplamaları otomatik yapıyor. Siz sadece cıvatanın boyutunu ve uzunluklarını giriyorsunuz, o da size sonucu veriyor. Böylece, bu karmaşık matematiği elle yapmanıza gerek kalmıyor!
-
-Bilmem Gereken Ekstra Bir Şey Var mı?
-- Uzunlukları Doğru Girin: Gövde ve dişli uzunluklarını tam bilmiyorsanız, cıvatanın nasıl kullanıldığına bakın. Gövde uzunluğu genelde birleştirilen parçaların kalınlığıdır. Dişli uzunluk, somunun vidalandığı yerin ne kadarının yük taşıdığıdır.
-- Hatalara Dikkat: Eğer uzunluklardan biri 0 girilirse, program bunu kontrol eder ve size söyler.
-- Sonucu Kontrol Edin: Eğer sonuç çok büyük veya çok küçük çıkarsa, girdilerinizi bir daha gözden geçirin!
+Beklenmedik Detay: Dişli Kısım Uzunluğu
+Beklenmedik bir detay, dişli kısım uzunluğunun sıfır olabileceği durumdur. Bu, gövdenin tüm yükü taşıdığı anlamına gelir ve standart birleşmelerde sık görülür. Bu durum, cıvatanın daha sert olduğunu gösterir, çünkü dişli kısım genellikle daha az dayanıklıdır.
