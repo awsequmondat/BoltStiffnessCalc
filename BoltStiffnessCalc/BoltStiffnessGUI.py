@@ -1,10 +1,11 @@
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, filedialog
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import matplotlib.pyplot as plt
 from PIL import Image, ImageTk
 import io
 import numpy as np
+import pandas as pd
 
 # Cıvata boyutları
 bolt_sizes = {
@@ -36,8 +37,36 @@ clamped_part_types = ['Washer', 'Plate', 'Cylinder']
 # Global değişkenler
 current_material = None
 clamped_parts_frames = []
+results_history = []
+max_rows = 5
+canvas = None
+
+class ToolTip:
+    def __init__(self, widget, text):
+        self.widget = widget
+        self.text = text
+        self.tipwindow = None
+        self.widget.bind("<Enter>", self.show_tip)
+        self.widget.bind("<Leave>", self.hide_tip)
+
+    def show_tip(self, event):
+        if self.tipwindow or not self.text:
+            return
+        x = self.widget.winfo_rootx() + 20
+        y = self.widget.winfo_rooty() + self.widget.winfo_height()
+        self.tipwindow = tw = tk.Toplevel(self.widget)
+        tw.wm_overrideredirect(True)
+        tw.wm_geometry(f"+{x}+{y}")
+        label = tk.Label(tw, text=self.text, background="#FFFFE0", relief="solid", borderwidth=1, fg="#333333")
+        label.pack()
+
+    def hide_tip(self, event):
+        if self.tipwindow:
+            self.tipwindow.destroy()
+            self.tipwindow = None
 
 def calculate_stiffness():
+    global canvas
     bolt_size = bolt_size_var.get()
     try:
         if not bolt_size:
@@ -103,42 +132,41 @@ def calculate_stiffness():
         shear_area_value = A_shank if shear_area == "Shank" else A_thread
         shear_stress = F_ext_shear / shear_area_value
         
-        result_text = (f"Toplam Cıvata Sertliği: {k_bolt:.2f} N/mm\n"
-                       f"Toplam Kavrama Sertliği: {k_clamped_total:.2f} N/mm\n"
-                       f"Toplam Cıvata Kuvveti: {F_bolt_total:.2f} N\n"
-                       f"Cıvata Çarpılma: {delta_L_bolt:.4f} mm\n"
-                       f"Kavrama Çarpılma: {delta_L_clamped:.4f} mm\n"
-                       f"Kesme Gerilimi: {shear_stress:.2f} MPa\n"
-                       f"Güvenlik Faktörü ({safety_basis}): {safety_factor:.2f}")
-        result_var.set(result_text)
+        # Sonuçları kaydet
+        result = {
+            "Toplam Cıvata Sertliği (N/mm)": f"{k_bolt:.2f}",
+            "Toplam Kavrama Sertliği (N/mm)": f"{k_clamped_total:.2f}",
+            "Toplam Cıvata Kuvveti (N)": f"{F_bolt_total:.2f}",
+            "Cıvata Çarpılma (mm)": f"{delta_L_bolt:.4f}",
+            "Kavrama Çarpılma (mm)": f"{delta_L_clamped:.4f}",
+            "Kesme Gerilimi (MPa)": f"{shear_stress:.2f}",
+            f"Güvenlik Faktörü ({safety_basis})": f"{safety_factor:.2f}"
+        }
+        results_history.append(result)
+        update_results_table()
         
-        plot_load_displacement(k_bolt, k_clamped_total, F_preload, F_ext_tensile, delta_F_bolt)
+        # Yük-çarpılma eğrisini arayüzde güncelle
+        if canvas:
+            canvas.get_tk_widget().destroy()
+        fig, ax = plt.subplots(figsize=(4, 3))
+        F_total_bolt = F_preload + delta_F_bolt
+        delta_L_bolt_preload = F_preload / k_bolt
+        delta_L_bolt_total = F_total_bolt / k_bolt
+        x_bolt = [0, delta_L_bolt_preload, delta_L_bolt_total]
+        y_bolt = [0, F_preload, F_total_bolt]
+        ax.plot(x_bolt, y_bolt, marker='o', label='Yük-Çarpılma', color='blue')
+        ax.set_xlabel('Çarpılma (mm)')
+        ax.set_ylabel('Yük (N)')
+        ax.set_title('Yük-Çarpılma Eğrisi')
+        ax.grid(True)
+        ax.legend()
+        canvas = FigureCanvasTkAgg(fig, master=plot_frame)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill='both', expand=True)
     except ValueError as e:
         messagebox.showerror("Giriş Hatası", str(e))
     except KeyError:
         messagebox.showerror("Giriş Hatası", "Geçersiz cıvata boyutu veya malzeme seçimi.")
-
-def plot_load_displacement(k_bolt, k_clamped, F_preload, F_ext_tensile, delta_F_bolt):
-    F_total_bolt = F_preload + delta_F_bolt
-    delta_L_bolt_preload = F_preload / k_bolt
-    delta_L_bolt_total = F_total_bolt / k_bolt
-    
-    x_bolt = [0, delta_L_bolt_preload, delta_L_bolt_total]
-    y_bolt = [0, F_preload, F_total_bolt]
-    
-    fig, ax = plt.subplots(figsize=(6, 4))
-    ax.plot(x_bolt, y_bolt, marker='o', label='Cıvata Yük-Çarpılma', color='blue')
-    ax.set_xlabel('Çarpılma (mm)')
-    ax.set_ylabel('Yük (N)')
-    ax.set_title('Cıvata Yük-Çarpılma İlişkisi')
-    ax.grid(True)
-    ax.legend()
-    
-    plot_window = tk.Toplevel(root)
-    plot_window.title("Yük-Çarpılma Eğrisi")
-    canvas = FigureCanvasTkAgg(fig, master=plot_window)
-    canvas.draw()
-    canvas.get_tk_widget().pack()
 
 def add_clamped_part(type='Washer', thickness='', material='Steel', area=''):
     frame = ttk.Frame(clamped_parts_frame, relief="groove", borderwidth=1)
@@ -170,6 +198,7 @@ def update_clamped_parts_frame():
     clamped_parts_frame.update_idletasks()
 
 def clear_inputs():
+    global canvas
     bolt_size_var.set("")
     shank_length_var.set("")
     thread_length_var.set("")
@@ -177,14 +206,23 @@ def clear_inputs():
     preload_percent_var.set('67')
     tensile_force_var.set("")
     shear_force_var.set("")
-    result_var.set("")
     shear_area_var.set("Thread")
     safety_basis_var.set("Yield")
     for frame in clamped_parts_frames[:]:
-        remove_clamped_part(frame.winfo_children()[0].master)
+        frame.winfo_children()[0].master.destroy()
+    clamped_parts_frames.clear()
+    if canvas:
+        canvas.get_tk_widget().destroy()
+        canvas = None
+
+def clear_results():
+    global results_history
+    results_history = []
+    update_results_table()
 
 def test_values():
-    clear_inputs()  # Önce mevcut girişleri temizle
+    clear_inputs()
+    root.update()
     bolt_size_var.set("M10")
     shank_length_var.set("30")
     thread_length_var.set("10")
@@ -195,10 +233,50 @@ def test_values():
     shear_area_var.set("Thread")
     safety_basis_var.set("Yield")
     
-    # Sıkıştırılan parçaları ekle
     add_clamped_part(type="Plate", thickness="10", material="Steel", area="100")
     add_clamped_part(type="Washer", thickness="5", material="Aluminum", area="80")
+    root.update()
     messagebox.showinfo("Test", "Test değerleri yüklendi. 'Hesapla' butonuna basarak sonuçları görebilirsiniz.")
+
+def update_results_table():
+    global max_rows
+    try:
+        max_rows = int(max_rows_var.get())
+        if max_rows < 1:
+            raise ValueError("En az 1 hesaplama gösterilmelidir.")
+    except ValueError:
+        max_rows = 5
+        max_rows_var.set("5")
+    
+    for item in results_tree.get_children():
+        results_tree.delete(item)
+    
+    if not results_history:
+        return
+    
+    headers = ["Parametre"] + [f"Hesaplama {i+1}" for i in range(min(len(results_history), max_rows))]
+    results_tree["columns"] = headers
+    results_tree.column("#0", width=0, stretch=tk.NO)
+    results_tree.heading("#0", text="", anchor="w")
+    for col in headers:
+        results_tree.column(col, anchor="center", width=150 if col == "Parametre" else 120)
+        results_tree.heading(col, text=col, anchor="center")
+    
+    params = list(results_history[0].keys())
+    for i, param in enumerate(params):
+        values = [param] + [result[param] for result in results_history[-max_rows:]]
+        results_tree.insert("", "end", values=values)
+
+def export_to_excel():
+    if not results_history:
+        messagebox.showwarning("Uyarı", "Export edilecek veri yok!")
+        return
+    
+    file_path = filedialog.asksaveasfilename(defaultextension=".xlsx", filetypes=[("Excel files", "*.xlsx"), ("All files", "*.*")])
+    if file_path:
+        df = pd.DataFrame(results_history)
+        df.to_excel(file_path, index=False)
+        messagebox.showinfo("Başarılı", f"Veriler '{file_path}' dosyasına kaydedildi.")
 
 def save_material():
     global current_material
@@ -228,8 +306,6 @@ def save_material():
         if current_material and current_material != name and name in materials:
             if not messagebox.askyesno("Uyarı", f"'{name}' zaten var. Üzerine yazmak ister misiniz?"):
                 return
-        if current_material and current_material != name:
-            del materials[current_material]
         materials[name] = {
             'E': E,
             'yield_strength': yield_strength,
@@ -238,11 +314,11 @@ def save_material():
             'percent_elongation': percent_elongation,
             'density': density
         }
-        update_material_listbox()
+        current_material = name
         material_var.set(name)
         material_entry['values'] = list(materials.keys())
-        current_material = name
         clear_material_inputs()
+        update_material_table()
         plot_stress_strain(name)
     except ValueError as e:
         messagebox.showerror("Giriş Hatası", str(e))
@@ -254,24 +330,22 @@ def new_material():
 
 def delete_material():
     global current_material
-    selected = material_listbox.curselection()
+    selected = material_tree.selection()
     if selected:
-        name = material_listbox.get(selected[0])
+        name = material_tree.item(selected[0])['values'][0]  # İlk sütundan malzeme adını al
         if name in materials:
             del materials[name]
-            update_material_listbox()
-            material_entry['values'] = list(materials.keys())
-            if material_var.get() == name:
-                material_var.set('Steel' if 'Steel' in materials else list(materials.keys())[0] if materials else '')
+            material_var.set('Steel' if 'Steel' in materials else list(materials.keys())[0] if materials else '')
             if current_material == name:
                 current_material = None
                 clear_material_inputs()
+            update_material_table()
 
 def on_material_select(event):
     global current_material
-    selected = material_listbox.curselection()
+    selected = material_tree.selection()
     if selected:
-        name = material_listbox.get(selected[0])
+        name = material_tree.item(selected[0])['values'][0]  # İlk sütundan malzeme adını al
         material = materials.get(name)
         if material:
             current_material = name
@@ -282,11 +356,7 @@ def on_material_select(event):
             material_poisson_var.set(str(material['poisson_ratio']))
             material_elongation_var.set(str(material['percent_elongation']) if material['percent_elongation'] is not None else "")
             material_density_var.set(str(material['density']))
-
-def update_material_listbox():
-    material_listbox.delete(0, tk.END)
-    for name in materials:
-        material_listbox.insert(tk.END, name)
+            update_material_table()
 
 def clear_material_inputs():
     material_name_var.set("")
@@ -296,6 +366,32 @@ def clear_material_inputs():
     material_poisson_var.set("")
     material_elongation_var.set("")
     material_density_var.set("")
+    update_material_table()
+
+def update_material_table():
+    for item in material_tree.get_children():
+        material_tree.delete(item)
+    
+    headers = ["Malzeme Adı", "Elastiklik Modülü (GPa)", "Verim Dayanımı (MPa)", "Nihai Dayanım (MPa)", "Poisson Oranı", "Uzama Yüzdesi (%)", "Yoğunluk (g/cm³)"]
+    material_tree["columns"] = headers
+    material_tree.column("#0", width=0, stretch=tk.NO)
+    material_tree.heading("#0", text="", anchor="w")
+    for col in headers:
+        material_tree.column(col, anchor="w", width=120)
+        material_tree.heading(col, text=col, anchor="w")
+    
+    # Mevcut malzemeleri satır olarak ekle
+    for name, props in materials.items():
+        values = [
+            name,
+            str(props['E'] / 1000),
+            str(props['yield_strength']),
+            str(props['ultimate_strength']),
+            str(props['poisson_ratio']),
+            str(props['percent_elongation']) if props['percent_elongation'] is not None else "",
+            str(props['density'])
+        ]
+        material_tree.insert("", "end", values=values)
 
 def plot_stress_strain(material_name):
     material = materials.get(material_name)
@@ -325,7 +421,7 @@ def plot_stress_strain(material_name):
     plot_window.title("Stress-Strain Eğrisi")
     canvas = FigureCanvasTkAgg(fig, master=plot_window)
     canvas.draw()
-    canvas.get_tk_widget().pack()
+    canvas.get_tk_widget().pack(fill='both', expand=True)
 
 def render_latex_to_image(latex_text):
     fig, ax = plt.subplots(figsize=(8, 1), dpi=100)
@@ -365,30 +461,6 @@ def render_wiki_text(widget, text):
         text = text[end+2:]
     widget.config(state="disabled")
 
-class ToolTip:
-    def __init__(self, widget, text):
-        self.widget = widget
-        self.text = text
-        self.tipwindow = None
-        self.widget.bind("<Enter>", self.show_tip)
-        self.widget.bind("<Leave>", self.hide_tip)
-
-    def show_tip(self, event):
-        if self.tipwindow or not self.text:
-            return
-        x = self.widget.winfo_rootx() + 20
-        y = self.widget.winfo_rooty() + self.widget.winfo_height()
-        self.tipwindow = tw = tk.Toplevel(self.widget)
-        tw.wm_overrideredirect(True)
-        tw.wm_geometry(f"+{x}+{y}")
-        label = tk.Label(tw, text=self.text, background="#FFFFE0", relief="solid", borderwidth=1, fg="#333333")
-        label.pack()
-
-    def hide_tip(self, event):
-        if self.tipwindow:
-            self.tipwindow.destroy()
-            self.tipwindow = None
-
 # Ana pencere
 root = tk.Tk()
 root.title("Cıvata Sertliği Hesaplayıcısı")
@@ -411,12 +483,13 @@ notebook.pack(expand=True, fill='both', padx=10, pady=10)
 calc_frame = ttk.Frame(notebook)
 notebook.add(calc_frame, text="Hesaplama")
 
-# Başlık
-tk.Label(calc_frame, text="Cıvata Sertliği Hesaplama", font=("Arial", 16, "bold"), bg="#F0F0F0", fg="#2196F3").pack(pady=10)
+# Giriş ve seçenekler çerçevesi
+input_options_frame = ttk.Frame(calc_frame)
+input_options_frame.pack(side="left", fill='y', padx=10, pady=5)
 
 # Giriş alanı
-input_frame = ttk.Frame(calc_frame)
-input_frame.pack(fill='x', padx=10, pady=5)
+input_frame = ttk.Frame(input_options_frame)
+input_frame.pack(fill='x', pady=5)
 
 tk.Label(input_frame, text="Cıvata Boyutu:").grid(row=0, column=0, padx=10, pady=5, sticky="e")
 bolt_size_var = tk.StringVar()
@@ -460,30 +533,30 @@ shear_force_entry = tk.Entry(input_frame, textvariable=shear_force_var, width=20
 shear_force_entry.grid(row=6, column=1, padx=10, pady=5, sticky="w")
 ToolTip(shear_force_entry, "Cıvatalı birleşmeye yanlara uygulanan kesme kuvveti (N).")
 
-# Kesme alanı seçimi
-shear_frame = ttk.LabelFrame(calc_frame, text="Kesme Alanı", padding=5)
-shear_frame.pack(fill='x', padx=10, pady=5)
+# Kesme alanı seçimi (küçültülmüş)
+shear_frame = ttk.LabelFrame(input_options_frame, text="Kesme Alanı", padding=2)
+shear_frame.pack(fill='x', pady=5)
 shear_area_var = tk.StringVar(value="Thread")
-ttk.Radiobutton(shear_frame, text="Gövde", variable=shear_area_var, value="Shank").pack(side="left", padx=5)
-ttk.Radiobutton(shear_frame, text="Dişli", variable=shear_area_var, value="Thread").pack(side="left", padx=5)
+ttk.Radiobutton(shear_frame, text="Gövde", variable=shear_area_var, value="Shank").pack(side="left", padx=2)
+ttk.Radiobutton(shear_frame, text="Dişli", variable=shear_area_var, value="Thread").pack(side="left", padx=2)
 
-# Güvenlik faktörü temeli
-safety_frame = ttk.LabelFrame(calc_frame, text="Güvenlik Faktörü Temeli", padding=5)
-safety_frame.pack(fill='x', padx=10, pady=5)
+# Güvenlik faktörü temeli (küçültülmüş)
+safety_frame = ttk.LabelFrame(input_options_frame, text="Güvenlik Faktörü", padding=2)
+safety_frame.pack(fill='x', pady=5)
 safety_basis_var = tk.StringVar(value="Yield")
-ttk.Radiobutton(safety_frame, text="Verim Dayanımı", variable=safety_basis_var, value="Yield").pack(side="left", padx=5)
-ttk.Radiobutton(safety_frame, text="Nihai Dayanım", variable=safety_basis_var, value="Ultimate").pack(side="left", padx=5)
+ttk.Radiobutton(safety_frame, text="Verim", variable=safety_basis_var, value="Yield").pack(side="left", padx=2)
+ttk.Radiobutton(safety_frame, text="Nihai", variable=safety_basis_var, value="Ultimate").pack(side="left", padx=2)
 
 # Sıkıştırılan parçalar
-clamped_frame = ttk.LabelFrame(calc_frame, text="Sıkıştırılan Parçalar (Kalınlık-mm, Alan-mm²)", padding=5)
-clamped_frame.pack(fill='x', padx=10, pady=5)
+clamped_frame = ttk.LabelFrame(input_options_frame, text="Sıkıştırılan Parçalar", padding=5)
+clamped_frame.pack(fill='x', pady=5)
 clamped_parts_frame = ttk.Frame(clamped_frame)
 clamped_parts_frame.pack(fill='x')
 ttk.Button(clamped_frame, text="Parça Ekle", command=add_clamped_part, style="Accent.TButton").pack(side="right", padx=5, pady=5)
 
 # Butonlar
-button_frame = ttk.Frame(calc_frame)
-button_frame.pack(fill='x', padx=10, pady=10)
+button_frame = ttk.Frame(input_options_frame)
+button_frame.pack(fill='x', pady=10)
 ttk.Button(button_frame, text="Hesapla", command=calculate_stiffness, style="Accent.TButton").pack(side="left", padx=5)
 style.configure("Accent.TButton", background="#4CAF50", foreground="white")
 style.map("Accent.TButton", background=[("active", "#45A049")])
@@ -494,82 +567,109 @@ ttk.Button(button_frame, text="Test", command=test_values, style="Test.TButton")
 style.configure("Test.TButton", background="#FF9800", foreground="white")
 style.map("Test.TButton", background=[("active", "#F57C00")])
 
-# Sonuçlar
-result_frame = ttk.LabelFrame(calc_frame, text="Sonuçlar", padding=5)
-result_frame.pack(fill='x', padx=10, pady=5)
-result_var = tk.StringVar()
-tk.Label(result_frame, textvariable=result_var, justify="left", font=("Arial", 10), bg="#FFFFFF", fg="#333333", wraplength=850).pack(fill='x', padx=5, pady=5)
+# Sağ taraf: Tablo ve Grafik
+right_frame = ttk.Frame(calc_frame)
+right_frame.pack(side="right", fill='both', expand=True, padx=10, pady=5)
+
+# Sonuçlar Tablosu
+result_frame = ttk.LabelFrame(right_frame, text="Sonuçlar Tablosu", padding=5)
+result_frame.pack(fill='x', pady=5)
+rows_frame = ttk.Frame(result_frame)
+rows_frame.pack(fill='x', pady=5)
+tk.Label(rows_frame, text="Gösterilecek Hesaplama Sayısı:").pack(side="left", padx=5)
+max_rows_var = tk.StringVar(value=str(max_rows))
+tk.Entry(rows_frame, textvariable=max_rows_var, width=5).pack(side="left", padx=5)
+ttk.Button(rows_frame, text="Güncelle", command=update_results_table).pack(side="left", padx=5)
+ttk.Button(rows_frame, text="Excel'e Aktar", command=export_to_excel, style="Export.TButton").pack(side="left", padx=5)
+style.configure("Export.TButton", background="#3F51B5", foreground="white")
+style.map("Export.TButton", background=[("active", "#303F9F")])
+ttk.Button(rows_frame, text="Temizle", command=clear_results, style="Danger.TButton").pack(side="left", padx=5)
+
+results_tree = ttk.Treeview(result_frame, height=7, show="headings")
+results_tree.pack(fill='x')
+scrollbar = ttk.Scrollbar(result_frame, orient="horizontal", command=results_tree.xview)
+scrollbar.pack(side="bottom", fill="x")
+results_tree.configure(xscrollcommand=scrollbar.set)
+
+# Yük-Çarpılma Grafiği
+plot_frame = ttk.LabelFrame(right_frame, text="Yük-Çarpılma Eğrisi", padding=5)
+plot_frame.pack(fill='both', expand=True)
 
 # Malzeme Kütüphanesi sekmesi
 material_frame = ttk.Frame(notebook)
 notebook.add(material_frame, text="Malzeme Kütüphanesi")
 
-tk.Label(material_frame, text="Malzeme Kütüphanesi Yönetimi", font=("Arial", 16, "bold"), bg="#F0F0F0", fg="#2196F3").pack(pady=10)
-
+# Malzeme giriş ve tablo çerçevesi
 material_input_frame = ttk.Frame(material_frame)
-material_input_frame.pack(side="left", fill='y', padx=10, pady=5)
+material_input_frame.pack(fill='both', expand=True, padx=5, pady=5)
 
-tk.Label(material_input_frame, text="Malzeme Adı *:").grid(row=0, column=0, padx=10, pady=5, sticky="e")
+# Giriş alanları
+input_subframe = ttk.Frame(material_input_frame)
+input_subframe.pack(fill='x', pady=5)
+
+tk.Label(input_subframe, text="Malzeme Adı *:").grid(row=0, column=0, padx=5, pady=2, sticky="e")
 material_name_var = tk.StringVar()
-material_name_entry = tk.Entry(material_input_frame, textvariable=material_name_var, width=25, bg="#FFFFFF", fg="#333333")
-material_name_entry.grid(row=0, column=1, padx=10, pady=5, sticky="w")
+material_name_entry = tk.Entry(input_subframe, textvariable=material_name_var, width=20, bg="#FFFFFF", fg="#333333")
+material_name_entry.grid(row=0, column=1, padx=5, pady=2)
 ToolTip(material_name_entry, "Malzeme adı, örneğin '316 Stainless Steel'.")
 
-tk.Label(material_input_frame, text="Verim Dayanımı (MPa) *:").grid(row=1, column=0, padx=10, pady=5, sticky="e")
-material_yield_var = tk.StringVar()
-material_yield_entry = tk.Entry(material_input_frame, textvariable=material_yield_var, width=25, bg="#FFFFFF", fg="#333333")
-material_yield_entry.grid(row=1, column=1, padx=10, pady=5, sticky="w")
-ToolTip(material_yield_entry, "Malzemenin verim dayanımı (MPa), örneğin 200.")
-
-tk.Label(material_input_frame, text="Nihai Dayanım (MPa) *:").grid(row=2, column=0, padx=10, pady=5, sticky="e")
-material_ultimate_var = tk.StringVar()
-material_ultimate_entry = tk.Entry(material_input_frame, textvariable=material_ultimate_var, width=25, bg="#FFFFFF", fg="#333333")
-material_ultimate_entry.grid(row=2, column=1, padx=10, pady=5, sticky="w")
-ToolTip(material_ultimate_entry, "Malzemenin nihai dayanımı (MPa), örneğin 530.")
-
-tk.Label(material_input_frame, text="Elastiklik Modülü (GPa) *:").grid(row=3, column=0, padx=10, pady=5, sticky="e")
+tk.Label(input_subframe, text="Elastiklik Modülü (GPa) *:").grid(row=1, column=0, padx=5, pady=2, sticky="e")
 material_E_var = tk.StringVar()
-material_E_entry = tk.Entry(material_input_frame, textvariable=material_E_var, width=25, bg="#FFFFFF", fg="#333333")
-material_E_entry.grid(row=3, column=1, padx=10, pady=5, sticky="w")
+material_E_entry = tk.Entry(input_subframe, textvariable=material_E_var, width=20, bg="#FFFFFF", fg="#333333")
+material_E_entry.grid(row=1, column=1, padx=5, pady=2)
 ToolTip(material_E_entry, "Malzemenin elastiklik modülü (GPa), örneğin 200.")
 
-tk.Label(material_input_frame, text="Poisson Oranı:").grid(row=4, column=0, padx=10, pady=5, sticky="e")
+tk.Label(input_subframe, text="Verim Dayanımı (MPa) *:").grid(row=2, column=0, padx=5, pady=2, sticky="e")
+material_yield_var = tk.StringVar()
+material_yield_entry = tk.Entry(input_subframe, textvariable=material_yield_var, width=20, bg="#FFFFFF", fg="#333333")
+material_yield_entry.grid(row=2, column=1, padx=5, pady=2)
+ToolTip(material_yield_entry, "Malzemenin verim dayanımı (MPa), örneğin 200.")
+
+tk.Label(input_subframe, text="Nihai Dayanım (MPa) *:").grid(row=3, column=0, padx=5, pady=2, sticky="e")
+material_ultimate_var = tk.StringVar()
+material_ultimate_entry = tk.Entry(input_subframe, textvariable=material_ultimate_var, width=20, bg="#FFFFFF", fg="#333333")
+material_ultimate_entry.grid(row=3, column=1, padx=5, pady=2)
+ToolTip(material_ultimate_entry, "Malzemenin nihai dayanımı (MPa), örneğin 530.")
+
+tk.Label(input_subframe, text="Poisson Oranı:").grid(row=4, column=0, padx=5, pady=2, sticky="e")
 material_poisson_var = tk.StringVar()
-material_poisson_entry = tk.Entry(material_input_frame, textvariable=material_poisson_var, width=25, bg="#FFFFFF", fg="#333333")
-material_poisson_entry.grid(row=4, column=1, padx=10, pady=5, sticky="w")
+material_poisson_entry = tk.Entry(input_subframe, textvariable=material_poisson_var, width=20, bg="#FFFFFF", fg="#333333")
+material_poisson_entry.grid(row=4, column=1, padx=5, pady=2)
 ToolTip(material_poisson_entry, "Malzemenin Poisson oranı, örneğin 0.28.")
 
-tk.Label(material_input_frame, text="Uzama Yüzdesi (%):").grid(row=5, column=0, padx=10, pady=5, sticky="e")
+tk.Label(input_subframe, text="Uzama Yüzdesi (%):").grid(row=5, column=0, padx=5, pady=2, sticky="e")
 material_elongation_var = tk.StringVar()
-material_elongation_entry = tk.Entry(material_input_frame, textvariable=material_elongation_var, width=25, bg="#FFFFFF", fg="#333333")
-material_elongation_entry.grid(row=5, column=1, padx=10, pady=5, sticky="w")
+material_elongation_entry = tk.Entry(input_subframe, textvariable=material_elongation_var, width=20, bg="#FFFFFF", fg="#333333")
+material_elongation_entry.grid(row=5, column=1, padx=5, pady=2)
 ToolTip(material_elongation_entry, "Malzemenin uzama yüzdesi, örneğin 40.")
 
-tk.Label(material_input_frame, text="Yoğunluk (g/cm³):").grid(row=6, column=0, padx=10, pady=5, sticky="e")
+tk.Label(input_subframe, text="Yoğunluk (g/cm³):").grid(row=6, column=0, padx=5, pady=2, sticky="e")
 material_density_var = tk.StringVar()
-material_density_entry = tk.Entry(material_input_frame, textvariable=material_density_var, width=25, bg="#FFFFFF", fg="#333333")
-material_density_entry.grid(row=6, column=1, padx=10, pady=5, sticky="w")
+material_density_entry = tk.Entry(input_subframe, textvariable=material_density_var, width=20, bg="#FFFFFF", fg="#333333")
+material_density_entry.grid(row=6, column=1, padx=5, pady=2)
 ToolTip(material_density_entry, "Malzemenin yoğunluğu (g/cm³), örneğin 8.0.")
 
+# Malzeme tablosu
+material_tree_frame = ttk.LabelFrame(material_input_frame, text="Malzeme Özellikleri", padding=5)
+material_tree_frame.pack(fill='both', expand=True, pady=5)
+material_tree = ttk.Treeview(material_tree_frame, show="headings")
+material_tree.pack(fill='both', expand=True)
+scrollbar = ttk.Scrollbar(material_tree_frame, orient="vertical", command=material_tree.yview)
+scrollbar.pack(side="right", fill="y")
+material_tree.configure(yscrollcommand=scrollbar.set)
+update_material_table()
+
+# Butonlar
 material_button_frame = ttk.Frame(material_input_frame)
-material_button_frame.grid(row=7, column=0, columnspan=2, pady=10)
+material_button_frame.pack(fill='x', pady=5)
 ttk.Button(material_button_frame, text="Kaydet", command=save_material, style="Accent.TButton").pack(side="left", padx=5)
 ttk.Button(material_button_frame, text="Yeni", command=new_material, style="TButton").pack(side="left", padx=5)
 ttk.Button(material_button_frame, text="Sil", command=delete_material, style="Danger.TButton").pack(side="left", padx=5)
-
-material_list_frame = ttk.Frame(material_frame)
-material_list_frame.pack(side="right", fill='y', padx=10, pady=5)
-tk.Label(material_list_frame, text="Mevcut Malzemeler:", font=("Arial", 10, "bold")).pack(pady=5)
-material_listbox = tk.Listbox(material_list_frame, height=20, width=30, bg="#FFFFFF", fg="#333333")
-material_listbox.pack(fill='y')
-material_listbox.bind('<<ListboxSelect>>', on_material_select)
-update_material_listbox()
 
 # Wiki sekmesi
 wiki_frame = ttk.Frame(notebook)
 notebook.add(wiki_frame, text="Bilgi")
 
-tk.Label(wiki_frame, text="Bilgi ve Formüller", font=("Arial", 16, "bold"), bg="#F0F0F0", fg="#2196F3").pack(pady=10)
 wiki_text_widget = tk.Text(wiki_frame, wrap="word", state="disabled", height=30, bg="#FFFFFF", fg="#333333")
 wiki_text_widget.pack(fill="both", expand=True, padx=10, pady=10)
 wiki_scrollbar = ttk.Scrollbar(wiki_frame, command=wiki_text_widget.yview)
