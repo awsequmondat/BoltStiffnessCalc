@@ -6,7 +6,7 @@ from PIL import Image, ImageTk
 import io
 import numpy as np
 
-# Cıvata boyutları (genişletilmiş)
+# Cıvata boyutları
 bolt_sizes = {
     'M6': {'A_shank': 28.27, 'A_thread': 20.1},
     'M8': {'A_shank': 50.27, 'A_thread': 36.6},
@@ -16,14 +16,14 @@ bolt_sizes = {
     'M16': {'A_shank': 201.06, 'A_thread': 157.1},
 }
 
-# Malzeme özellikleri
+# Malzeme özellikleri (düzenlenebilir)
 materials = {
-    'Steel': {'E': 200000, 'yield_strength': 800},  # E in MPa, yield_strength in MPa
-    'Aluminum': {'E': 70000, 'yield_strength': 275},
-    'Titanium': {'E': 110000, 'yield_strength': 800},
+    'Steel': {'E': 200000, 'yield_strength': 800, 'ultimate_strength': 1000, 'poisson_ratio': 0.30, 'percent_elongation': 40, 'density': 7.85},
+    'Aluminum': {'E': 70000, 'yield_strength': 275, 'ultimate_strength': 310, 'poisson_ratio': 0.33, 'percent_elongation': 12, 'density': 2.70},
+    'Titanium': {'E': 110000, 'yield_strength': 800, 'ultimate_strength': 900, 'poisson_ratio': 0.34, 'percent_elongation': 10, 'density': 4.51},
 }
 
-# Wiki metnini dosyadan yükle (hata durumunda boş metin kullan)
+# Wiki metnini dosyadan yükle
 try:
     with open(r"c:\Users\DELL\Desktop\Kısayollar\Things\Projects\BoltStiffnessCalc\BoltStiffnessCalc\wiki_text.txt", "r", encoding="utf-8") as file:
         wiki_text = file.read()
@@ -32,6 +32,9 @@ except FileNotFoundError:
 
 # Parça türleri
 clamped_part_types = ['Washer', 'Plate', 'Cylinder']
+
+# Düzenleme için global değişken
+current_material = None
 
 def calculate_stiffness():
     bolt_size = bolt_size_var.get()
@@ -70,8 +73,6 @@ def calculate_stiffness():
             if thickness <= 0:
                 raise ValueError("Parça kalınlığı 0'dan büyük olmalı.")
             total_thickness += thickness
-            part_type = part_frame['type_var'].get()
-            # Simplified area assumption (using A_thread for all parts)
             k_part = (E_bolt * A_thread) / thickness
             k_clamped_total = k_part if k_clamped_total == 0 else 1 / (1/k_clamped_total + 1/k_part)
         
@@ -88,11 +89,11 @@ def calculate_stiffness():
         delta_L_bolt = F_bolt_total / k_bolt
         delta_L_clamped = F_clamped / k_clamped_total if k_clamped_total > 0 else 0
         
-        # Safety factor (simplified)
+        # Safety factor
         max_load = yield_strength * A_thread
         safety_factor = max_load / F_bolt_total if F_bolt_total > 0 else float('inf')
         
-        # Shear stress (simplified)
+        # Shear stress
         shear_stress = F_ext_shear / A_thread
         
         # Display results
@@ -116,7 +117,6 @@ def plot_load_displacement(k_bolt, k_clamped, F_preload, F_ext_tensile, delta_F_
     F_total_bolt = F_preload + delta_F_bolt
     delta_L_bolt_preload = F_preload / k_bolt
     delta_L_bolt_total = F_total_bolt / k_bolt
-    delta_L_clamped = (F_ext_tensile - delta_F_bolt) / k_clamped if k_clamped > 0 else 0
     
     x_bolt = [0, delta_L_bolt_preload, delta_L_bolt_total]
     y_bolt = [0, F_preload, F_total_bolt]
@@ -125,7 +125,7 @@ def plot_load_displacement(k_bolt, k_clamped, F_preload, F_ext_tensile, delta_F_
     ax.plot(x_bolt, y_bolt, marker='o', label='Cıvata Yük-Çarpılma', color='blue')
     ax.set_xlabel('Çarpılma (mm)')
     ax.set_ylabel('Yük (N)')
-    ax.set_title('Cıvata ve Kavrama Yük-Çarpılma İlişkisi')
+    ax.set_title('Cıvata Yük-Çarpılma İlişkisi')
     ax.grid(True)
     ax.legend()
     
@@ -169,6 +169,134 @@ def clear_inputs():
     result_var.set("")
     for frame in clamped_parts_frames[:]:
         remove_clamped_part(frame.winfo_children()[0].master)
+
+def save_material():
+    global current_material
+    name = material_name_var.get().strip()
+    try:
+        if not name:
+            raise ValueError("Malzeme adı boş olamaz.")
+        E = float(material_E_var.get()) * 1000  # GPa to MPa
+        if E <= 0:
+            raise ValueError("Elastiklik modülü 0'dan büyük olmalı.")
+        yield_strength = float(material_yield_var.get())
+        if yield_strength <= 0:
+            raise ValueError("Verim dayanımı 0'dan büyük olmalı.")
+        ultimate_strength = float(material_ultimate_var.get())
+        if ultimate_strength <= 0 or ultimate_strength < yield_strength:
+            raise ValueError("Nihai dayanım, verim dayanımından büyük ve pozitif olmalı.")
+        poisson_ratio = float(material_poisson_var.get()) if material_poisson_var.get() else 0.3
+        if not 0 <= poisson_ratio <= 0.5:
+            raise ValueError("Poisson oranı 0-0.5 arasında olmalı.")
+        percent_elongation = float(material_elongation_var.get()) if material_elongation_var.get() else None
+        if percent_elongation is not None and percent_elongation < 0:
+            raise ValueError("Uzama yüzdesi negatif olamaz.")
+        density = float(material_density_var.get()) if material_density_var.get() else 8.0
+        if density <= 0:
+            raise ValueError("Yoğunluk 0'dan büyük olmalı.")
+        
+        # Yeni malzeme ekleme veya mevcut malzeme güncelleme
+        if current_material and current_material != name and name in materials:
+            if not messagebox.askyesno("Uyarı", f"'{name}' zaten var. Üzerine yazmak ister misiniz?"):
+                return
+        if current_material and current_material != name:
+            del materials[current_material]  # Eski adı sil
+        materials[name] = {
+            'E': E,
+            'yield_strength': yield_strength,
+            'ultimate_strength': ultimate_strength,
+            'poisson_ratio': poisson_ratio,
+            'percent_elongation': percent_elongation,
+            'density': density
+        }
+        update_material_listbox()
+        material_var.set(name)
+        material_entry['values'] = list(materials.keys())
+        current_material = name
+        clear_material_inputs()
+        plot_stress_strain(name)
+    except ValueError as e:
+        messagebox.showerror("Giriş Hatası", str(e))
+
+def new_material():
+    global current_material
+    current_material = None
+    clear_material_inputs()
+
+def delete_material():
+    global current_material
+    selected = material_listbox.curselection()
+    if selected:
+        name = material_listbox.get(selected[0])
+        if name in materials:
+            del materials[name]
+            update_material_listbox()
+            material_entry['values'] = list(materials.keys())
+            if material_var.get() == name:
+                material_var.set('Steel' if 'Steel' in materials else list(materials.keys())[0] if materials else '')
+            if current_material == name:
+                current_material = None
+                clear_material_inputs()
+
+def on_material_select(event):
+    global current_material
+    selected = material_listbox.curselection()
+    if selected:
+        name = material_listbox.get(selected[0])
+        material = materials.get(name)
+        if material:
+            current_material = name
+            material_name_var.set(name)
+            material_E_var.set(str(material['E'] / 1000))  # MPa to GPa
+            material_yield_var.set(str(material['yield_strength']))
+            material_ultimate_var.set(str(material['ultimate_strength']))
+            material_poisson_var.set(str(material['poisson_ratio']))
+            material_elongation_var.set(str(material['percent_elongation']) if material['percent_elongation'] is not None else "")
+            material_density_var.set(str(material['density']))
+
+def update_material_listbox():
+    material_listbox.delete(0, tk.END)
+    for name in materials:
+        material_listbox.insert(tk.END, name)
+
+def clear_material_inputs():
+    material_name_var.set("")
+    material_E_var.set("")
+    material_yield_var.set("")
+    material_ultimate_var.set("")
+    material_poisson_var.set("")
+    material_elongation_var.set("")
+    material_density_var.set("")
+
+def plot_stress_strain(material_name):
+    material = materials.get(material_name)
+    if not material:
+        return
+    
+    E = material['E']
+    yield_strength = material['yield_strength']
+    ultimate_strength = material['ultimate_strength']
+    percent_elongation = material.get('percent_elongation', None)
+    
+    strain_yield = yield_strength / E
+    strain_ultimate = percent_elongation / 100 if percent_elongation else strain_yield * 1.5
+    
+    strain = [0, strain_yield, strain_ultimate]
+    stress = [0, yield_strength, ultimate_strength]
+    
+    fig, ax = plt.subplots(figsize=(6, 4))
+    ax.plot(strain, stress, marker='o', label=f'{material_name} Stress-Strain')
+    ax.set_xlabel('Strain (mm/mm)')
+    ax.set_ylabel('Stress (MPa)')
+    ax.set_title(f'{material_name} Stress-Strain Eğrisi')
+    ax.grid(True)
+    ax.legend()
+    
+    plot_window = tk.Toplevel(root)
+    plot_window.title("Stress-Strain Eğrisi")
+    canvas = FigureCanvasTkAgg(fig, master=plot_window)
+    canvas.draw()
+    canvas.get_tk_widget().pack()
 
 def render_latex_to_image(latex_text):
     fig, ax = plt.subplots(figsize=(8, 1), dpi=100)
@@ -241,7 +369,7 @@ root.geometry("800x600")
 notebook = ttk.Notebook(root)
 notebook.pack(expand=True, fill='both')
 
-# Calculator sekmesi
+# Calculator sekmesi (1. sıra)
 calc_frame = ttk.Frame(notebook)
 notebook.add(calc_frame, text="Hesaplama")
 
@@ -307,7 +435,84 @@ result_var = tk.StringVar()
 result_label = tk.Label(calc_frame, textvariable=result_var, justify="left")
 result_label.grid(row=10, column=0, columnspan=2, padx=10, pady=10)
 
-# Wiki sekmesi
+# Malzeme Kütüphanesi sekmesi (2. sıra)
+material_frame = ttk.Frame(notebook)
+notebook.add(material_frame, text="Malzeme Kütüphanesi")
+
+# Malzeme Kütüphanesi widget'ları
+tk.Label(material_frame, text="Malzeme Adı *:").grid(row=0, column=0, padx=10, pady=5, sticky="e")
+material_name_var = tk.StringVar()
+material_name_entry = tk.Entry(material_frame, textvariable=material_name_var, width=20)
+material_name_entry.grid(row=0, column=1, padx=10, pady=5, sticky="w")
+ToolTip(material_name_entry, "Malzeme adı, örneğin '316 Stainless Steel'.")
+
+tk.Label(material_frame, text="Durum:").grid(row=1, column=0, padx=10, pady=5, sticky="e")
+material_condition_var = tk.StringVar()
+material_condition_entry = tk.Entry(material_frame, textvariable=material_condition_var, width=20)
+material_condition_entry.grid(row=1, column=1, padx=10, pady=5, sticky="w")
+ToolTip(material_condition_entry, "Malzeme durumu, örneğin 'Annealed'.")
+
+tk.Label(material_frame, text="Form:").grid(row=2, column=0, padx=10, pady=5, sticky="e")
+material_form_var = tk.StringVar()
+material_form_entry = tk.Entry(material_frame, textvariable=material_form_var, width=20)
+material_form_entry.grid(row=2, column=1, padx=10, pady=5, sticky="w")
+ToolTip(material_form_entry, "Malzeme formu, örneğin 'Bar'.")
+
+tk.Label(material_frame, text="Boyut:").grid(row=3, column=0, padx=10, pady=5, sticky="e")
+material_size_var = tk.StringVar()
+material_size_entry = tk.Entry(material_frame, textvariable=material_size_var, width=20)
+material_size_entry.grid(row=3, column=1, padx=10, pady=5, sticky="w")
+ToolTip(material_size_entry, "Malzeme boyutu, örneğin '<= 5 in'.")
+
+tk.Label(material_frame, text="Verim Dayanımı (MPa) *:").grid(row=4, column=0, padx=10, pady=5, sticky="e")
+material_yield_var = tk.StringVar()
+material_yield_entry = tk.Entry(material_frame, textvariable=material_yield_var, width=15)
+material_yield_entry.grid(row=4, column=1, padx=10, pady=5, sticky="w")
+ToolTip(material_yield_entry, "Malzemenin verim dayanımı (MPa), örneğin 200.")
+
+tk.Label(material_frame, text="Nihai Dayanım (MPa) *:").grid(row=5, column=0, padx=10, pady=5, sticky="e")
+material_ultimate_var = tk.StringVar()
+material_ultimate_entry = tk.Entry(material_frame, textvariable=material_ultimate_var, width=15)
+material_ultimate_entry.grid(row=5, column=1, padx=10, pady=5, sticky="w")
+ToolTip(material_ultimate_entry, "Malzemenin nihai dayanımı (MPa), örneğin 530.")
+
+tk.Label(material_frame, text="Elastiklik Modülü (GPa) *:").grid(row=6, column=0, padx=10, pady=5, sticky="e")
+material_E_var = tk.StringVar()
+material_E_entry = tk.Entry(material_frame, textvariable=material_E_var, width=15)
+material_E_entry.grid(row=6, column=1, padx=10, pady=5, sticky="w")
+ToolTip(material_E_entry, "Malzemenin elastiklik modülü (GPa), örneğin 200.")
+
+tk.Label(material_frame, text="Poisson Oranı:").grid(row=7, column=0, padx=10, pady=5, sticky="e")
+material_poisson_var = tk.StringVar()
+material_poisson_entry = tk.Entry(material_frame, textvariable=material_poisson_var, width=15)
+material_poisson_entry.grid(row=7, column=1, padx=10, pady=5, sticky="w")
+ToolTip(material_poisson_entry, "Malzemenin Poisson oranı, örneğin 0.28.")
+
+tk.Label(material_frame, text="Uzama Yüzdesi (%):").grid(row=8, column=0, padx=10, pady=5, sticky="e")
+material_elongation_var = tk.StringVar()
+material_elongation_entry = tk.Entry(material_frame, textvariable=material_elongation_var, width=15)
+material_elongation_entry.grid(row=8, column=1, padx=10, pady=5, sticky="w")
+ToolTip(material_elongation_entry, "Malzemenin uzama yüzdesi, örneğin 40.")
+
+tk.Label(material_frame, text="Yoğunluk (g/cm³):").grid(row=9, column=0, padx=10, pady=5, sticky="e")
+material_density_var = tk.StringVar()
+material_density_entry = tk.Entry(material_frame, textvariable=material_density_var, width=15)
+material_density_entry.grid(row=9, column=1, padx=10, pady=5, sticky="w")
+ToolTip(material_density_entry, "Malzemenin yoğunluğu (g/cm³), örneğin 8.0.")
+
+material_button_frame = ttk.Frame(material_frame)
+material_button_frame.grid(row=10, column=0, columnspan=2, pady=10)
+ttk.Button(material_button_frame, text="Kaydet", command=save_material).pack(side="left", padx=5)
+ttk.Button(material_button_frame, text="Yeni", command=new_material).pack(side="left", padx=5)
+ttk.Button(material_button_frame, text="Sil", command=delete_material).pack(side="left", padx=5)
+
+tk.Label(material_frame, text="Mevcut Malzemeler:").grid(row=11, column=0, padx=10, pady=5, sticky="e")
+material_listbox = tk.Listbox(material_frame, height=10, width=30)
+material_listbox.grid(row=11, column=1, padx=10, pady=5, sticky="w")
+material_listbox.bind('<<ListboxSelect>>', on_material_select)
+update_material_listbox()
+
+# Wiki sekmesi (3. sıra)
 wiki_frame = ttk.Frame(notebook)
 notebook.add(wiki_frame, text="Bilgi")
 
