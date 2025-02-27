@@ -33,31 +33,33 @@ except FileNotFoundError:
 # Parça türleri
 clamped_part_types = ['Washer', 'Plate', 'Cylinder']
 
-# Düzenleme için global değişken
+# Global değişkenler
 current_material = None
+clamped_parts_frames = []
 
 def calculate_stiffness():
     bolt_size = bolt_size_var.get()
     try:
         L_shank = float(shank_length_var.get())
         if L_shank <= 0:
-            raise ValueError("Gövde uzunluğu 0'dan büyük olmalı.")
+            raise ValueError("Gövde uzunluğu 0'dan büyük olmalıdır.")
         L_thread = float(thread_length_var.get())
         if L_thread < 0:
             raise ValueError("Dişli kısım uzunluğu negatif olamaz.")
         material = material_var.get()
         E_bolt = materials[material]['E']
         yield_strength = materials[material]['yield_strength']
+        ultimate_strength = materials[material]['ultimate_strength']
         A_shank = bolt_sizes[bolt_size]['A_shank']
         A_thread = bolt_sizes[bolt_size]['A_thread']
         preload_percent = float(preload_percent_var.get())
         if not 0 <= preload_percent <= 100:
-            raise ValueError("Ön yükleme yüzdesi 0-100 arasında olmalı.")
+            raise ValueError("Ön yükleme yüzdesi 0-100 arasında olmalıdır.")
         F_preload = (preload_percent / 100) * yield_strength * A_thread
         F_ext_tensile = float(tensile_force_var.get())
         F_ext_shear = float(shear_force_var.get())
         
-        # Calculate bolt stiffness
+        # Cıvata sertliği
         k_shank = (E_bolt * A_shank) / L_shank
         if L_thread > 0:
             k_thread = (E_bolt * A_thread) / L_thread
@@ -65,53 +67,60 @@ def calculate_stiffness():
         else:
             k_bolt = k_shank
         
-        # Calculate clamped parts stiffness
+        # Sıkıştırılan parçaların sertliği
         k_clamped_total = 0
         total_thickness = 0
         for part_frame in clamped_parts_frames:
             thickness = float(part_frame['thickness_var'].get())
             if thickness <= 0:
-                raise ValueError("Parça kalınlığı 0'dan büyük olmalı.")
+                raise ValueError("Lütfen tüm parçalar için geçerli kalınlık değerleri girin (>0).")
+            material = part_frame['material_var'].get()
+            E_part = materials[material]['E']
+            area = float(part_frame['area_var'].get())
+            if area <= 0:
+                raise ValueError("Lütfen tüm parçalar için geçerli alan değerleri girin (>0).")
             total_thickness += thickness
-            k_part = (E_bolt * A_thread) / thickness
+            k_part = (E_part * area) / thickness
             k_clamped_total = k_part if k_clamped_total == 0 else 1 / (1/k_clamped_total + 1/k_part)
         
         if total_thickness == 0:
-            messagebox.showwarning("Uyarı", "En az bir sıkıştırılan parça eklenmeli.")
-            return
+            raise ValueError("En az bir sıkıştırılan parça eklenmelidir.")
         
-        # Load distribution
+        # Yük dağılımı
         delta_F_bolt = (k_bolt / (k_bolt + k_clamped_total)) * F_ext_tensile
         F_bolt_total = F_preload + delta_F_bolt
         F_clamped = F_ext_tensile - delta_F_bolt
         
-        # Calculate displacements
+        # Çarpılmalar
         delta_L_bolt = F_bolt_total / k_bolt
         delta_L_clamped = F_clamped / k_clamped_total if k_clamped_total > 0 else 0
         
-        # Safety factor
-        max_load = yield_strength * A_thread
+        # Güvenlik faktörü
+        safety_basis = safety_basis_var.get()
+        max_load = yield_strength * A_thread if safety_basis == "Yield" else ultimate_strength * A_thread
         safety_factor = max_load / F_bolt_total if F_bolt_total > 0 else float('inf')
         
-        # Shear stress
-        shear_stress = F_ext_shear / A_thread
+        # Kesme gerilimi
+        shear_area = shear_area_var.get()
+        shear_area_value = A_shank if shear_area == "Shank" else A_thread
+        shear_stress = F_ext_shear / shear_area_value
         
-        # Display results
+        # Sonuçları göster
         result_text = (f"Toplam Cıvata Sertliği: {k_bolt:.2f} N/mm\n"
                        f"Toplam Kavrama Sertliği: {k_clamped_total:.2f} N/mm\n"
                        f"Toplam Cıvata Kuvveti: {F_bolt_total:.2f} N\n"
                        f"Cıvata Çarpılma: {delta_L_bolt:.4f} mm\n"
                        f"Kavrama Çarpılma: {delta_L_clamped:.4f} mm\n"
                        f"Kesme Gerilimi: {shear_stress:.2f} MPa\n"
-                       f"Güvenlik Faktörü: {safety_factor:.2f}")
+                       f"Güvenlik Faktörü ({safety_basis}): {safety_factor:.2f}")
         result_var.set(result_text)
         
-        # Plot load-displacement curve
+        # Grafik çizimi
         plot_load_displacement(k_bolt, k_clamped_total, F_preload, F_ext_tensile, delta_F_bolt)
     except ValueError as e:
         messagebox.showerror("Giriş Hatası", str(e))
     except KeyError:
-        messagebox.showerror("Giriş Hatası", "Geçersiz cıvata boyutu ya da malzeme.")
+        messagebox.showerror("Giriş Hatası", "Geçersiz cıvata boyutu veya malzeme seçimi.")
 
 def plot_load_displacement(k_bolt, k_clamped, F_preload, F_ext_tensile, delta_F_bolt):
     F_total_bolt = F_preload + delta_F_bolt
@@ -145,9 +154,15 @@ def add_clamped_part():
     thickness_var = tk.StringVar()
     tk.Entry(frame, textvariable=thickness_var, width=10).pack(side='left', padx=5)
     
+    material_var = tk.StringVar(value='Steel')
+    ttk.Combobox(frame, textvariable=material_var, values=list(materials.keys()), width=15).pack(side='left', padx=5)
+    
+    area_var = tk.StringVar()
+    tk.Entry(frame, textvariable=area_var, width=10).pack(side='left', padx=5)
+    
     ttk.Button(frame, text="Kaldır", command=lambda: remove_clamped_part(frame)).pack(side='left', padx=5)
     
-    clamped_parts_frames.append({'type_var': type_var, 'thickness_var': thickness_var})
+    clamped_parts_frames.append({'type_var': type_var, 'thickness_var': thickness_var, 'material_var': material_var, 'area_var': area_var})
     update_clamped_parts_frame()
 
 def remove_clamped_part(frame):
@@ -167,6 +182,8 @@ def clear_inputs():
     tensile_force_var.set("")
     shear_force_var.set("")
     result_var.set("")
+    shear_area_var.set("Thread")
+    safety_basis_var.set("Yield")
     for frame in clamped_parts_frames[:]:
         remove_clamped_part(frame.winfo_children()[0].master)
 
@@ -178,29 +195,28 @@ def save_material():
             raise ValueError("Malzeme adı boş olamaz.")
         E = float(material_E_var.get()) * 1000  # GPa to MPa
         if E <= 0:
-            raise ValueError("Elastiklik modülü 0'dan büyük olmalı.")
+            raise ValueError("Elastiklik modülü 0'dan büyük olmalıdır.")
         yield_strength = float(material_yield_var.get())
         if yield_strength <= 0:
-            raise ValueError("Verim dayanımı 0'dan büyük olmalı.")
+            raise ValueError("Verim dayanımı 0'dan büyük olmalıdır.")
         ultimate_strength = float(material_ultimate_var.get())
         if ultimate_strength <= 0 or ultimate_strength < yield_strength:
-            raise ValueError("Nihai dayanım, verim dayanımından büyük ve pozitif olmalı.")
+            raise ValueError("Nihai dayanım, verim dayanımından büyük ve pozitif olmalıdır.")
         poisson_ratio = float(material_poisson_var.get()) if material_poisson_var.get() else 0.3
         if not 0 <= poisson_ratio <= 0.5:
-            raise ValueError("Poisson oranı 0-0.5 arasında olmalı.")
+            raise ValueError("Poisson oranı 0-0.5 arasında olmalıdır.")
         percent_elongation = float(material_elongation_var.get()) if material_elongation_var.get() else None
         if percent_elongation is not None and percent_elongation < 0:
             raise ValueError("Uzama yüzdesi negatif olamaz.")
         density = float(material_density_var.get()) if material_density_var.get() else 8.0
         if density <= 0:
-            raise ValueError("Yoğunluk 0'dan büyük olmalı.")
+            raise ValueError("Yoğunluk 0'dan büyük olmalıdır.")
         
-        # Yeni malzeme ekleme veya mevcut malzeme güncelleme
         if current_material and current_material != name and name in materials:
             if not messagebox.askyesno("Uyarı", f"'{name}' zaten var. Üzerine yazmak ister misiniz?"):
                 return
         if current_material and current_material != name:
-            del materials[current_material]  # Eski adı sil
+            del materials[current_material]
         materials[name] = {
             'E': E,
             'yield_strength': yield_strength,
@@ -362,14 +378,14 @@ class ToolTip:
 
 # Ana pencere
 root = tk.Tk()
-root.title("Bolt Stiffness Calculator")
+root.title("Cıvata Sertliği Hesaplayıcısı")
 root.geometry("800x600")
 
-# Notebook oluştur
+# Notebook
 notebook = ttk.Notebook(root)
 notebook.pack(expand=True, fill='both')
 
-# Calculator sekmesi (1. sıra)
+# Hesaplama sekmesi
 calc_frame = ttk.Frame(notebook)
 notebook.add(calc_frame, text="Hesaplama")
 
@@ -416,26 +432,37 @@ shear_force_entry = tk.Entry(calc_frame, textvariable=shear_force_var, width=15)
 shear_force_entry.grid(row=6, column=1, padx=10, pady=5, sticky="w")
 ToolTip(shear_force_entry, "Cıvatalı birleşmeye yanlara uygulanan kesme kuvveti (N).")
 
-# Sıkıştırılan parçalar için dinamik alan
-tk.Label(calc_frame, text="Sıkıştırılan Parçalar:").grid(row=7, column=0, padx=10, pady=5, sticky="e")
+# Kesme alanı seçimi
+tk.Label(calc_frame, text="Kesme Alanı:").grid(row=7, column=0, padx=10, pady=5, sticky="e")
+shear_area_var = tk.StringVar(value="Thread")
+ttk.Radiobutton(calc_frame, text="Gövde", variable=shear_area_var, value="Shank").grid(row=7, column=1, padx=5, pady=5, sticky="w")
+ttk.Radiobutton(calc_frame, text="Dişli", variable=shear_area_var, value="Thread").grid(row=7, column=2, padx=5, pady=5, sticky="w")
+
+# Güvenlik faktörü temeli
+tk.Label(calc_frame, text="Güvenlik Faktörü Temeli:").grid(row=8, column=0, padx=10, pady=5, sticky="e")
+safety_basis_var = tk.StringVar(value="Yield")
+ttk.Radiobutton(calc_frame, text="Verim Dayanımı", variable=safety_basis_var, value="Yield").grid(row=8, column=1, padx=5, pady=5, sticky="w")
+ttk.Radiobutton(calc_frame, text="Nihai Dayanım", variable=safety_basis_var, value="Ultimate").grid(row=8, column=2, padx=5, pady=5, sticky="w")
+
+# Sıkıştırılan parçalar
+tk.Label(calc_frame, text="Sıkıştırılan Parçalar (Kalınlık-mm, Alan-mm²):").grid(row=9, column=0, padx=10, pady=5, sticky="e")
 clamped_parts_frame = ttk.Frame(calc_frame)
-clamped_parts_frame.grid(row=7, column=1, padx=10, pady=5, sticky="w")
-clamped_parts_frames = []
+clamped_parts_frame.grid(row=9, column=1, padx=10, pady=5, sticky="w")
 
-ttk.Button(calc_frame, text="Parça Ekle", command=add_clamped_part).grid(row=8, column=1, padx=10, pady=5, sticky="w")
+ttk.Button(calc_frame, text="Parça Ekle", command=add_clamped_part).grid(row=10, column=1, padx=10, pady=5, sticky="w")
 
-# Buttons
+# Butonlar
 button_frame = ttk.Frame(calc_frame)
-button_frame.grid(row=9, column=0, columnspan=2, pady=10)
+button_frame.grid(row=11, column=0, columnspan=2, pady=10)
 ttk.Button(button_frame, text="Hesapla", command=calculate_stiffness).pack(side="left", padx=5)
 ttk.Button(button_frame, text="Temizle", command=clear_inputs).pack(side="left", padx=5)
 
-# Results
+# Sonuçlar
 result_var = tk.StringVar()
 result_label = tk.Label(calc_frame, textvariable=result_var, justify="left")
-result_label.grid(row=10, column=0, columnspan=2, padx=10, pady=10)
+result_label.grid(row=12, column=0, columnspan=2, padx=10, pady=10)
 
-# Malzeme Kütüphanesi sekmesi (2. sıra)
+# Malzeme Kütüphanesi sekmesi
 material_frame = ttk.Frame(notebook)
 notebook.add(material_frame, text="Malzeme Kütüphanesi")
 
@@ -512,20 +539,17 @@ material_listbox.grid(row=11, column=1, padx=10, pady=5, sticky="w")
 material_listbox.bind('<<ListboxSelect>>', on_material_select)
 update_material_listbox()
 
-# Wiki sekmesi (3. sıra)
+# Wiki sekmesi
 wiki_frame = ttk.Frame(notebook)
 notebook.add(wiki_frame, text="Bilgi")
 
-# Wiki metnini gösteren Text widget (salt okunur)
 wiki_text_widget = tk.Text(wiki_frame, wrap="word", state="disabled", height=20)
 wiki_text_widget.pack(fill="both", expand=True, padx=10, pady=10)
 
-# Scrollbar for wiki_text_widget
 wiki_scrollbar = ttk.Scrollbar(wiki_frame, command=wiki_text_widget.yview)
 wiki_scrollbar.pack(side="right", fill="y")
 wiki_text_widget.config(yscrollcommand=wiki_scrollbar.set)
 
-# Render wiki text with LaTeX
 render_wiki_text(wiki_text_widget, wiki_text)
 
 # Uygulamayı çalıştır
