@@ -24,40 +24,12 @@ materials = {
     'Titanium': {'E': 110000, 'yield_strength': 800, 'ultimate_strength': 900, 'poisson_ratio': 0.34, 'percent_elongation': 10, 'density': 4.51},
 }
 
-# Wiki metni (Markdown ve LaTeX karışımı)
-wiki_text = """
-# Cıvata Sertliği Hesaplama Bilgileri
-
-Bu bölümde cıvata sertliği hesaplamaları için temel bilgiler ve formüller yer alıyor.
-
-## Temel Formüller
-
-Cıvata sertliği \( k_b \) ve kavrama sertliği \( k_c \) aşağıdaki gibi hesaplanır:
-
-- **Cıvata Sertliği:**
-  $$ k_b = \\frac{E \\cdot A}{L} $$
-  Burada:
-  - \( E \): Elastiklik modülü (MPa)
-  - \( A \): Kesit alanı (mm²)
-  - \( L \): Uzunluk (mm)
-
-- **Kavrama Sertliği:**
-  $$ k_c = \\frac{1}{\\sum \\frac{L_i}{E_i \\cdot A_i}} $$
-  Burada \( L_i \), \( E_i \), ve \( A_i \) sırasıyla her bir sıkıştırılan parçanın uzunluğu, elastiklik modülü ve kesit alanıdır.
-
-## Örnek Hesaplama
-
-Bir M10 cıvata için:
-- **Gövde Uzunluğu:** 30 mm
-- **Dişli Uzunluk:** 10 mm
-- **Malzeme:** Steel (\( E = 200000 \, \text{MPa} \))
-
-Sertlik:
-$$ k_b = \\frac{200000 \\cdot 58}{40} = 290000 \, \text{N/mm} $$
-
-## Notlar
-- Daha fazla bilgi için Shigley's Mechanical Engineering Design kitabına bakabilirsiniz.
-"""
+# Wiki metni
+try:
+    with open(r"c:\Users\DELL\Desktop\Kısayollar\Things\Projects\BoltStiffnessCalc\BoltStiffnessCalc\wiki_text.txt", "r", encoding="utf-8") as file:
+        wiki_text = file.read()
+except FileNotFoundError:
+    wiki_text = "Wiki metni bulunamadı. Lütfen wiki_text.txt dosyasını oluşturun."
 
 # Parça türleri
 clamped_part_types = ['Washer', 'Plate', 'Cylinder']
@@ -408,6 +380,7 @@ def update_material_table():
         material_tree.column(col, anchor="w", width=120)
         material_tree.heading(col, text=col, anchor="w")
     
+    # Mevcut malzemeleri satır olarak ekle
     for name, props in materials.items():
         values = [
             name,
@@ -451,7 +424,7 @@ def plot_stress_strain(material_name):
     canvas.get_tk_widget().pack(fill='both', expand=True)
 
 def render_latex_to_image(latex_text):
-    fig, ax = plt.subplots(figsize=(len(latex_text) * 0.1 + 1, 1), dpi=100)
+    fig, ax = plt.subplots(figsize=(8, 1), dpi=100)
     ax.text(0.5, 0.5, f"${latex_text}$", fontsize=12, ha='center', va='center', color='#333333')
     ax.axis('off')
     
@@ -465,33 +438,27 @@ def render_latex_to_image(latex_text):
 def render_wiki_text(widget, text):
     widget.config(state="normal")
     widget.delete("1.0", tk.END)
-    widget.image_list = []  # Resimleri saklamak için liste
+    widget.image_list = []
     
-    lines = text.split('\n')
-    for line in lines:
-        if line.strip().startswith('#'):
-            # Markdown başlıklarını işleme
-            level = line.count('#')
-            text = line.strip('# ').strip()
-            widget.insert(tk.END, text + '\n', f"h{level}")
-        elif line.strip().startswith('$$') and line.strip().endswith('$$'):
-            # LaTeX formülleri
-            latex_text = line.strip().strip('$$').strip()
-            try:
-                image = render_latex_to_image(latex_text)
-                widget.image_list.append(image)
-                widget.image_create(tk.END, image=image)
-                widget.insert(tk.END, '\n')
-            except Exception as e:
-                widget.insert(tk.END, f"[LaTeX Hatası: {str(e)}]\n")
-        else:
-            # Normal metin
-            widget.insert(tk.END, line + '\n')
-    
-    # Markdown başlık stilleri
-    widget.tag_configure("h1", font=("Arial", 16, "bold"))
-    widget.tag_configure("h2", font=("Arial", 14, "bold"))
-    widget.tag_configure("h3", font=("Arial", 12, "bold"))
+    while text:
+        start = text.find('$$')
+        if start == -1:
+            widget.insert(tk.END, text)
+            break
+        widget.insert(tk.END, text[:start])
+        text = text[start+2:]
+        end = text.find('$$')
+        if end == -1:
+            widget.insert(tk.END, text)
+            break
+        latex_text = text[:end]
+        try:
+            image = render_latex_to_image(latex_text)
+            widget.image_list.append(image)
+            widget.image_create(tk.END, image=image)
+        except Exception as e:
+            widget.insert(tk.END, f"[LaTeX Hatası: {str(e)}]")
+        text = text[end+2:]
     widget.config(state="disabled")
 
 # Ana pencere
@@ -703,7 +670,7 @@ ttk.Button(material_button_frame, text="Sil", command=delete_material, style="Da
 wiki_frame = ttk.Frame(notebook)
 notebook.add(wiki_frame, text="Bilgi")
 
-wiki_text_widget = tk.Text(wiki_frame, wrap="word", state="disabled", bg="#FFFFFF", fg="#333333")
+wiki_text_widget = tk.Text(wiki_frame, wrap="word", state="disabled", height=30, bg="#FFFFFF", fg="#333333")
 wiki_text_widget.pack(fill="both", expand=True, padx=10, pady=10)
 wiki_scrollbar = ttk.Scrollbar(wiki_frame, command=wiki_text_widget.yview)
 wiki_scrollbar.pack(side="right", fill="y")
