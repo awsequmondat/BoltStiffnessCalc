@@ -69,6 +69,7 @@ clamped_parts_frames = []
 results_history = []
 max_rows = 5
 canvas = None
+para_canvas = None  # Parametric plot canvas
 
 class ToolTip:
     def __init__(self, widget, text):
@@ -495,8 +496,53 @@ def render_wiki_text(widget, text):
     widget.tag_configure("h3", font=("Arial", 12, "bold"))
     widget.config(state="disabled")
 
+# Popup window for defining parameter ranges
+def define_range(param_var, param_name, is_numeric=True):
+    popup = tk.Toplevel(root)
+    popup.title(f"{param_name} Tanımla")
+    popup.geometry("300x200")
+    
+    if is_numeric:
+        tk.Label(popup, text="Başlangıç:").grid(row=0, column=0, padx=5, pady=5)
+        start_var = tk.StringVar()
+        tk.Entry(popup, textvariable=start_var).grid(row=0, column=1, padx=5, pady=5)
+        
+        tk.Label(popup, text="Bitiş:").grid(row=1, column=0, padx=5, pady=5)
+        end_var = tk.StringVar()
+        tk.Entry(popup, textvariable=end_var).grid(row=1, column=1, padx=5, pady=5)
+        
+        tk.Label(popup, text="Adım:").grid(row=2, column=0, padx=5, pady=5)
+        step_var = tk.StringVar()
+        tk.Entry(popup, textvariable=step_var).grid(row=2, column=1, padx=5, pady=5)
+        
+        def apply_range():
+            try:
+                start = float(start_var.get())
+                end = float(end_var.get())
+                step = float(step_var.get())
+                if step <= 0:
+                    raise ValueError("Adım değeri pozitif olmalıdır.")
+                values = np.arange(start, end + step, step)
+                param_var.set(','.join(map(str, values)))
+                popup.destroy()
+            except ValueError as e:
+                messagebox.showerror("Hata", str(e) or "Geçersiz giriş.")
+        
+        ttk.Button(popup, text="Uygula", command=apply_range).grid(row=3, column=0, columnspan=2, pady=10)
+    else:
+        tk.Label(popup, text="Değerler (virgülle ayrılmış):").grid(row=0, column=0, padx=5, pady=5)
+        list_var = tk.StringVar()
+        tk.Entry(popup, textvariable=list_var, width=30).grid(row=0, column=1, padx=5, pady=5)
+        
+        def apply_list():
+            param_var.set(list_var.get())
+            popup.destroy()
+        
+        ttk.Button(popup, text="Uygula", command=apply_list).grid(row=1, column=0, columnspan=2, pady=10)
+
 # Parametrik analiz fonksiyonu
 def run_parametric_analysis():
+    global parametric_results
     # Get input values
     bolt_size_vals = param_bolt_size_var.get().split(',') if param_bolt_size_var.get() else [bolt_size_var.get()]
     shank_length_vals = param_shank_length_var.get().split(',') if param_shank_length_var.get() else [shank_length_var.get()]
@@ -513,7 +559,7 @@ def run_parametric_analysis():
     
     # Generate all combinations
     combinations = list(product(bolt_size_vals, shank_length_vals, thread_length_vals, preload_percent_vals, tensile_force_vals))
-    results = []
+    parametric_results = []
     
     for combo in combinations:
         bolt_size_var.set(combo[0])
@@ -529,12 +575,12 @@ def run_parametric_analysis():
             result['Dişli Kısım Uzunluğu'] = combo[2]
             result['Ön Yükleme Yüzdesi'] = combo[3]
             result['Çekme Kuvveti'] = combo[4]
-            results.append(result)
+            parametric_results.append(result)
     
     # Find optimal combination (highest safety factor)
-    if results:
+    if parametric_results:
         safety_key = f"Güvenlik Faktörü ({safety_basis_var.get()})"
-        optimal_result = max(results, key=lambda x: float(x[safety_key]))
+        optimal_result = max(parametric_results, key=lambda x: float(x[safety_key]))
         optimal_combo = (optimal_result['Cıvata Boyutu'], optimal_result['Gövde Uzunluğu'], 
                          optimal_result['Dişli Kısım Uzunluğu'], optimal_result['Ön Yükleme Yüzdesi'], 
                          optimal_result['Çekme Kuvveti'])
@@ -544,19 +590,64 @@ def run_parametric_analysis():
     for item in para_results_tree.get_children():
         para_results_tree.delete(item)
     
-    if not results:
+    if not parametric_results:
         return
     
-    headers = ['Cıvata Boyutu', 'Gövde Uzunluğu', 'Dişli Kısım Uzunluğu', 'Ön Yükleme Yüzdesi', 'Çekme Kuvveti'] + list(results[0].keys())
+    headers = ['Cıvata Boyutu', 'Gövde Uzunluğu', 'Dişli Kısım Uzunluğu', 'Ön Yükleme Yüzdesi', 'Çekme Kuvveti'] + list(parametric_results[0].keys())
     para_results_tree["columns"] = headers
     for col in headers:
         para_results_tree.column(col, anchor="center", width=120)
         para_results_tree.heading(col, text=col, anchor="center")
     
-    for result in results:
+    for result in parametric_results:
         values = [result['Cıvata Boyutu'], result['Gövde Uzunluğu'], result['Dişli Kısım Uzunluğu'], 
                   result['Ön Yükleme Yüzdesi'], result['Çekme Kuvveti']] + list(result.values())
         para_results_tree.insert("", "end", values=values)
+
+# Grafik çizme fonksiyonu
+def draw_parametric_graph():
+    global para_canvas, parametric_results
+    if not parametric_results:
+        messagebox.showwarning("Uyarı", "Önce parametrik analiz yapmalısınız!")
+        return
+    
+    selected_param = param_to_graph_var.get()
+    safety_key = f"Güvenlik Faktörü ({safety_basis_var.get()})"
+    
+    # Group results by selected parameter and calculate average safety factor
+    grouped_data = {}
+    for result in parametric_results:
+        param_value = result[selected_param]
+        if param_value not in grouped_data:
+            grouped_data[param_value] = []
+        grouped_data[param_value].append(float(result[safety_key]))
+    
+    x_values = list(grouped_data.keys())
+    y_values = [sum(values) / len(values) for values in grouped_data.values()]
+    
+    # Determine graph type based on parameter
+    is_numeric = selected_param in ['Gövde Uzunluğu', 'Dişli Kısım Uzunluğu', 'Ön Yükleme Yüzdesi', 'Çekme Kuvveti']
+    
+    if para_canvas:
+        para_canvas.get_tk_widget().destroy()
+    
+    fig, ax = plt.subplots(figsize=(6, 4))
+    if is_numeric:
+        # Convert x_values to float for numeric parameters
+        x_values = [float(x) for x in x_values]
+        ax.plot(x_values, y_values, marker='o', label='Ortalama Güvenlik Faktörü', color='blue')
+    else:
+        ax.bar(x_values, y_values, color='blue', label='Ortalama Güvenlik Faktörü')
+    
+    ax.set_xlabel(selected_param)
+    ax.set_ylabel('Ortalama Güvenlik Faktörü')
+    ax.set_title(f'{selected_param} vs Güvenlik Faktörü')
+    ax.grid(True)
+    ax.legend()
+    
+    para_canvas = FigureCanvasTkAgg(fig, master=para_plot_frame)
+    para_canvas.draw()
+    para_canvas.get_tk_widget().pack(fill='both', expand=True)
 
 # Ana pencere
 root = tk.Tk()
@@ -770,41 +861,62 @@ notebook.add(parametric_frame, text="Parametrik Hesaplama")
 para_input_frame = ttk.Frame(parametric_frame)
 para_input_frame.pack(fill='x', padx=10, pady=5)
 
-# Side-by-side parameter inputs
+# Side-by-side parameter inputs with "Tanımla" buttons
 tk.Label(para_input_frame, text="Cıvata Boyutu:").grid(row=0, column=0, padx=5, pady=5)
 param_bolt_size_var = tk.StringVar()
-tk.Entry(para_input_frame, textvariable=param_bolt_size_var, width=20).grid(row=0, column=1, padx=5)
-ToolTip(tk.Entry(para_input_frame, textvariable=param_bolt_size_var, width=20), "örn: M6,M8,M10")
+param_bolt_size_entry = tk.Entry(para_input_frame, textvariable=param_bolt_size_var, width=20)
+param_bolt_size_entry.grid(row=0, column=1, padx=5)
+ttk.Button(para_input_frame, text="Tanımla", command=lambda: define_range(param_bolt_size_var, "Cıvata Boyutu", is_numeric=False)).grid(row=0, column=2, padx=5)
+ToolTip(param_bolt_size_entry, "örn: M6,M8,M10")
 
-tk.Label(para_input_frame, text="Gövde Uzunluğu (mm):").grid(row=0, column=2, padx=5, pady=5)
+tk.Label(para_input_frame, text="Gövde Uzunluğu (mm):").grid(row=0, column=3, padx=5, pady=5)
 param_shank_length_var = tk.StringVar()
-tk.Entry(para_input_frame, textvariable=param_shank_length_var, width=20).grid(row=0, column=3, padx=5)
-ToolTip(tk.Entry(para_input_frame, textvariable=param_shank_length_var, width=20), "örn: 20,30,40")
+param_shank_length_entry = tk.Entry(para_input_frame, textvariable=param_shank_length_var, width=20)
+param_shank_length_entry.grid(row=0, column=4, padx=5)
+ttk.Button(para_input_frame, text="Tanımla", command=lambda: define_range(param_shank_length_var, "Gövde Uzunluğu")).grid(row=0, column=5, padx=5)
+ToolTip(param_shank_length_entry, "örn: 20,30,40 veya 10-20 adım 2")
 
-tk.Label(para_input_frame, text="Dişli Kısım Uzunluğu (mm):").grid(row=0, column=4, padx=5, pady=5)
+tk.Label(para_input_frame, text="Dişli Kısım Uzunluğu (mm):").grid(row=0, column=6, padx=5, pady=5)
 param_thread_length_var = tk.StringVar()
-tk.Entry(para_input_frame, textvariable=param_thread_length_var, width=20).grid(row=0, column=5, padx=5)
-ToolTip(tk.Entry(para_input_frame, textvariable=param_thread_length_var, width=20), "örn: 10,15,20")
+param_thread_length_entry = tk.Entry(para_input_frame, textvariable=param_thread_length_var, width=20)
+param_thread_length_entry.grid(row=0, column=7, padx=5)
+ttk.Button(para_input_frame, text="Tanımla", command=lambda: define_range(param_thread_length_var, "Dişli Kısım Uzunluğu")).grid(row=0, column=8, padx=5)
+ToolTip(param_thread_length_entry, "örn: 10,15,20 veya 10-20 adım 5")
 
 tk.Label(para_input_frame, text="Ön Yükleme Yüzdesi (%):").grid(row=1, column=0, padx=5, pady=5)
 param_preload_percent_var = tk.StringVar()
-tk.Entry(para_input_frame, textvariable=param_preload_percent_var, width=20).grid(row=1, column=1, padx=5)
-ToolTip(tk.Entry(para_input_frame, textvariable=param_preload_percent_var, width=20), "örn: 60,70,80")
+param_preload_percent_entry = tk.Entry(para_input_frame, textvariable=param_preload_percent_var, width=20)
+param_preload_percent_entry.grid(row=1, column=1, padx=5)
+ttk.Button(para_input_frame, text="Tanımla", command=lambda: define_range(param_preload_percent_var, "Ön Yükleme Yüzdesi")).grid(row=1, column=2, padx=5)
+ToolTip(param_preload_percent_entry, "örn: 60,70,80 veya 50-90 adım 10")
 
-tk.Label(para_input_frame, text="Çekme Kuvveti (N):").grid(row=1, column=2, padx=5, pady=5)
+tk.Label(para_input_frame, text="Çekme Kuvveti (N):").grid(row=1, column=3, padx=5, pady=5)
 param_tensile_force_var = tk.StringVar()
-tk.Entry(para_input_frame, textvariable=param_tensile_force_var, width=20).grid(row=1, column=3, padx=5)
-ToolTip(tk.Entry(para_input_frame, textvariable=param_tensile_force_var, width=20), "örn: 5000,10000")
+param_tensile_force_entry = tk.Entry(para_input_frame, textvariable=param_tensile_force_var, width=20)
+param_tensile_force_entry.grid(row=1, column=4, padx=5)
+ttk.Button(para_input_frame, text="Tanımla", command=lambda: define_range(param_tensile_force_var, "Çekme Kuvveti")).grid(row=1, column=5, padx=5)
+ToolTip(param_tensile_force_entry, "örn: 5000,10000 veya 5000-15000 adım 5000")
 
-ttk.Button(para_input_frame, text="Hesapla", command=run_parametric_analysis, style="Accent.TButton").grid(row=2, column=0, columnspan=6, pady=5)
+ttk.Button(para_input_frame, text="Hesapla", command=run_parametric_analysis, style="Accent.TButton").grid(row=2, column=0, columnspan=9, pady=5)
 
 para_results_frame = ttk.LabelFrame(parametric_frame, text="Parametrik Sonuçlar", padding=5)
-para_results_frame.pack(fill='both', expand=True, padx=10, pady=5)
-para_results_tree = ttk.Treeview(para_results_frame, show="headings")
-para_results_tree.pack(fill='both', expand=True)
+para_results_frame.pack(fill='x', padx=10, pady=5)
+para_results_tree = ttk.Treeview(para_results_frame, show="headings", height=7)
+para_results_tree.pack(fill='x')
 para_scrollbar = ttk.Scrollbar(para_results_frame, orient="horizontal", command=para_results_tree.xview)
 para_scrollbar.pack(side="bottom", fill="x")
 para_results_tree.configure(xscrollcommand=para_scrollbar.set)
+
+# Graph selection and drawing
+para_graph_frame = ttk.Frame(para_results_frame)
+para_graph_frame.pack(fill='x', pady=5)
+tk.Label(para_graph_frame, text="Grafik Parametresi:").pack(side="left", padx=5)
+param_to_graph_var = tk.StringVar()
+ttk.Combobox(para_graph_frame, textvariable=param_to_graph_var, values=['Cıvata Boyutu', 'Gövde Uzunluğu', 'Dişli Kısım Uzunluğu', 'Ön Yükleme Yüzdesi', 'Çekme Kuvveti'], width=20).pack(side="left", padx=5)
+ttk.Button(para_graph_frame, text="Grafik Çiz", command=draw_parametric_graph).pack(side="left", padx=5)
+
+para_plot_frame = ttk.LabelFrame(parametric_frame, text="Parametrik Grafik", padding=5)
+para_plot_frame.pack(fill='both', expand=True, padx=10, pady=5)
 
 # Wiki sekmesi
 wiki_frame = ttk.Frame(notebook)
