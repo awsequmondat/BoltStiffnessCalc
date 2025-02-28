@@ -7,6 +7,7 @@ import io
 import numpy as np
 import pandas as pd
 from itertools import product
+import time
 
 # Cıvata boyutları
 bolt_sizes = {
@@ -69,7 +70,8 @@ clamped_parts_frames = []
 results_history = []
 max_rows = 5
 canvas = None
-para_canvas = None  # Parametric plot canvas
+para_canvas = None  # Parametrik grafik canvas'ı
+parametric_results = []  # Parametrik analiz sonuçları
 
 class ToolTip:
     def __init__(self, widget, text):
@@ -175,7 +177,7 @@ def calculate_stiffness():
         results_history.append(result)
         update_results_table()
         
-        # Yük-çarpılma eğrisini arayüzde güncelle
+        # Grafik çizimi kaldırıldı, sadece tekil hesaplama için grafik istenirse manuel olarak çizilir
         if canvas:
             canvas.get_tk_widget().destroy()
         fig, ax = plt.subplots(figsize=(4, 3))
@@ -496,7 +498,7 @@ def render_wiki_text(widget, text):
     widget.tag_configure("h3", font=("Arial", 12, "bold"))
     widget.config(state="disabled")
 
-# Popup window for defining parameter ranges
+# Parametre aralığı tanımlama penceresi
 def define_range(param_var, param_name, is_numeric=True):
     popup = tk.Toplevel(root)
     popup.title(f"{param_name} Tanımla")
@@ -543,25 +545,38 @@ def define_range(param_var, param_name, is_numeric=True):
 # Parametrik analiz fonksiyonu
 def run_parametric_analysis():
     global parametric_results
-    # Get input values
+    # Girdi değerlerini al
     bolt_size_vals = param_bolt_size_var.get().split(',') if param_bolt_size_var.get() else [bolt_size_var.get()]
     shank_length_vals = param_shank_length_var.get().split(',') if param_shank_length_var.get() else [shank_length_var.get()]
     thread_length_vals = param_thread_length_var.get().split(',') if param_thread_length_var.get() else [thread_length_var.get()]
     preload_percent_vals = param_preload_percent_var.get().split(',') if param_preload_percent_var.get() else [preload_percent_var.get()]
     tensile_force_vals = param_tensile_force_var.get().split(',') if param_tensile_force_var.get() else [tensile_force_var.get()]
     
-    # Convert to appropriate types
+    # Uygun türlere çevir
     bolt_size_vals = [v.strip() for v in bolt_size_vals]
     shank_length_vals = [float(v.strip()) for v in shank_length_vals]
     thread_length_vals = [float(v.strip()) for v in thread_length_vals]
     preload_percent_vals = [float(v.strip()) for v in preload_percent_vals]
     tensile_force_vals = [float(v.strip()) for v in tensile_force_vals]
     
-    # Generate all combinations
+    # Tüm kombinasyonları oluştur
     combinations = list(product(bolt_size_vals, shank_length_vals, thread_length_vals, preload_percent_vals, tensile_force_vals))
+    
+    total_combinations = len(combinations)
+    if total_combinations > 1000:
+        response = messagebox.askyesno("Uyarı", "Bu işlem uzun sürebilir. Devam etmek istiyor musunuz?")
+        if not response:
+            return
+    
+    # İlerleme çubuğunu ve label'i göster
+    progress_bar['maximum'] = total_combinations
+    progress_bar['value'] = 0
+    progress_label.config(text="Hesaplama: 0% tamamlandı, Kalan süre: -")
+    
+    start_time = time.time()
     parametric_results = []
     
-    for combo in combinations:
+    for i, combo in enumerate(combinations):
         bolt_size_var.set(combo[0])
         shank_length_var.set(str(combo[1]))
         thread_length_var.set(str(combo[2]))
@@ -576,17 +591,29 @@ def run_parametric_analysis():
             result['Ön Yükleme Yüzdesi'] = combo[3]
             result['Çekme Kuvveti'] = combo[4]
             parametric_results.append(result)
+        
+        # İlerleme çubuğunu güncelle
+        progress_bar['value'] = i + 1
+        elapsed_time = time.time() - start_time
+        avg_time_per_comb = elapsed_time / (i + 1)
+        remaining_combs = total_combinations - (i + 1)
+        remaining_time = remaining_combs * avg_time_per_comb
+        progress_label.config(text=f"Hesaplama: {(i + 1) / total_combinations * 100:.1f}% tamamlandı, Kalan süre: {remaining_time:.1f} saniye")
+        root.update_idletasks()
     
-    # Find optimal combination (highest safety factor)
+    # Analiz tamamlandı
+    progress_label.config(text="Hesaplama tamamlandı!")
+    
+    # En optimal kombinasyonu bul ve label'e yaz
     if parametric_results:
         safety_key = f"Güvenlik Faktörü ({safety_basis_var.get()})"
         optimal_result = max(parametric_results, key=lambda x: float(x[safety_key]))
         optimal_combo = (optimal_result['Cıvata Boyutu'], optimal_result['Gövde Uzunluğu'], 
                          optimal_result['Dişli Kısım Uzunluğu'], optimal_result['Ön Yükleme Yüzdesi'], 
                          optimal_result['Çekme Kuvveti'])
-        messagebox.showinfo("Optimal Kombinasyon", f"En verimli kombinasyon: {optimal_combo}\nGüvenlik Faktörü: {optimal_result[safety_key]}")
+        optimal_label.config(text=f"En Optimal Kombinasyon: {optimal_combo}, Güvenlik Faktörü: {optimal_result[safety_key]}")
     
-    # Update parametric results table
+    # Parametrik sonuçlar tablosunu güncelle
     for item in para_results_tree.get_children():
         para_results_tree.delete(item)
     
@@ -604,9 +631,62 @@ def run_parametric_analysis():
                   result['Ön Yükleme Yüzdesi'], result['Çekme Kuvveti']] + list(result.values())
         para_results_tree.insert("", "end", values=values)
 
-# Grafik çizme fonksiyonu
+# En optimal kombinasyonun grafiğini çizme fonksiyonu
+def draw_optimal_graph():
+    global para_canvas
+    if not parametric_results:
+        messagebox.showwarning("Uyarı", "Önce parametrik analiz yapmalısınız!")
+        return
+    
+    safety_key = f"Güvenlik Faktörü ({safety_basis_var.get()})"
+    optimal_result = max(parametric_results, key=lambda x: float(x[safety_key]))
+    
+    # Optimal kombinasyon için girişleri ayarla ve grafik çiz
+    bolt_size_var.set(optimal_result['Cıvata Boyutu'])
+    shank_length_var.set(str(optimal_result['Gövde Uzunluğu']))
+    thread_length_var.set(str(optimal_result['Dişli Kısım Uzunluğu']))
+    preload_percent_var.set(str(optimal_result['Ön Yükleme Yüzdesi']))
+    tensile_force_var.set(str(optimal_result['Çekme Kuvveti']))
+    
+    E_bolt = materials[material_var.get()]['E']
+    yield_strength = materials[material_var.get()]['yield_strength']
+    A_shank = bolt_sizes[optimal_result['Cıvata Boyutu']]['A_shank']
+    A_thread = bolt_sizes[optimal_result['Cıvata Boyutu']]['A_thread']
+    
+    k_shank = (E_bolt * A_shank) / float(optimal_result['Gövde Uzunluğu'])
+    if float(optimal_result['Dişli Kısım Uzunluğu']) > 0:
+        k_thread = (E_bolt * A_thread) / float(optimal_result['Dişli Kısım Uzunluğu'])
+        k_bolt = 1 / (1/k_shank + 1/k_thread)
+    else:
+        k_bolt = k_shank
+    
+    F_preload = (float(optimal_result['Ön Yükleme Yüzdesi']) / 100) * yield_strength * A_thread
+    delta_F_bolt = (k_bolt / (k_bolt + float(optimal_result['Toplam Kavrama Sertliği (N/mm)']))) * float(optimal_result['Çekme Kuvveti'])
+    F_total_bolt = F_preload + delta_F_bolt
+    
+    delta_L_bolt_preload = F_preload / k_bolt
+    delta_L_bolt_total = F_total_bolt / k_bolt
+    
+    if para_canvas:
+        para_canvas.get_tk_widget().destroy()
+    
+    fig, ax = plt.subplots(figsize=(6, 4))
+    x_bolt = [0, delta_L_bolt_preload, delta_L_bolt_total]
+    y_bolt = [0, F_preload, F_total_bolt]
+    ax.plot(x_bolt, y_bolt, marker='o', label='Yük-Çarpılma (Optimal)', color='green')
+    ax.set_xlabel('Çarpılma (mm)')
+    ax.set_ylabel('Yük (N)')
+    ax.set_title('Optimal Kombinasyon Yük-Çarpılma Eğrisi')
+    ax.grid(True)
+    ax.legend()
+    
+    para_canvas = FigureCanvasTkAgg(fig, master=para_plot_frame)
+    para_canvas.draw()
+    para_canvas.get_tk_widget().pack(fill='both', expand=True)
+
+# Grafik çizme fonksiyonu (parametrik analiz sonuçları için)
 def draw_parametric_graph():
-    global para_canvas, parametric_results
+    global para_canvas
     if not parametric_results:
         messagebox.showwarning("Uyarı", "Önce parametrik analiz yapmalısınız!")
         return
@@ -614,7 +694,7 @@ def draw_parametric_graph():
     selected_param = param_to_graph_var.get()
     safety_key = f"Güvenlik Faktörü ({safety_basis_var.get()})"
     
-    # Group results by selected parameter and calculate average safety factor
+    # Seçilen parametreye göre ortalama güvenlik faktörünü hesapla
     grouped_data = {}
     for result in parametric_results:
         param_value = result[selected_param]
@@ -625,7 +705,7 @@ def draw_parametric_graph():
     x_values = list(grouped_data.keys())
     y_values = [sum(values) / len(values) for values in grouped_data.values()]
     
-    # Determine graph type based on parameter
+    # Parametre türüne göre grafik tipi belirle
     is_numeric = selected_param in ['Gövde Uzunluğu', 'Dişli Kısım Uzunluğu', 'Ön Yükleme Yüzdesi', 'Çekme Kuvveti']
     
     if para_canvas:
@@ -633,7 +713,6 @@ def draw_parametric_graph():
     
     fig, ax = plt.subplots(figsize=(6, 4))
     if is_numeric:
-        # Convert x_values to float for numeric parameters
         x_values = [float(x) for x in x_values]
         ax.plot(x_values, y_values, marker='o', label='Ortalama Güvenlik Faktörü', color='blue')
     else:
@@ -721,14 +800,14 @@ shear_force_entry = tk.Entry(input_frame, textvariable=shear_force_var, width=20
 shear_force_entry.grid(row=6, column=1, padx=10, pady=5, sticky="w")
 ToolTip(shear_force_entry, "Cıvatalı birleşmeye yanlara uygulanan kesme kuvveti (N).")
 
-# Kesme alanı seçimi (küçültülmüş)
+# Kesme alanı seçimi
 shear_frame = ttk.LabelFrame(input_options_frame, text="Kesme Alanı", padding=2)
 shear_frame.pack(fill='x', pady=5)
 shear_area_var = tk.StringVar(value="Thread")
 ttk.Radiobutton(shear_frame, text="Gövde", variable=shear_area_var, value="Shank").pack(side="left", padx=2)
 ttk.Radiobutton(shear_frame, text="Dişli", variable=shear_area_var, value="Thread").pack(side="left", padx=2)
 
-# Güvenlik faktörü temeli (küçültülmüş)
+# Güvenlik faktörü temeli
 safety_frame = ttk.LabelFrame(input_options_frame, text="Güvenlik Faktörü", padding=2)
 safety_frame.pack(fill='x', pady=5)
 safety_basis_var = tk.StringVar(value="Yield")
@@ -861,7 +940,7 @@ notebook.add(parametric_frame, text="Parametrik Hesaplama")
 para_input_frame = ttk.Frame(parametric_frame)
 para_input_frame.pack(fill='x', padx=10, pady=5)
 
-# Side-by-side parameter inputs with "Tanımla" buttons
+# Parametre girişleri ve "Tanımla" butonları
 tk.Label(para_input_frame, text="Cıvata Boyutu:").grid(row=0, column=0, padx=5, pady=5)
 param_bolt_size_var = tk.StringVar()
 param_bolt_size_entry = tk.Entry(para_input_frame, textvariable=param_bolt_size_var, width=20)
@@ -899,6 +978,17 @@ ToolTip(param_tensile_force_entry, "örn: 5000,10000 veya 5000-15000 adım 5000"
 
 ttk.Button(para_input_frame, text="Hesapla", command=run_parametric_analysis, style="Accent.TButton").grid(row=2, column=0, columnspan=9, pady=5)
 
+# İlerleme çubuğu ve label
+progress_bar = ttk.Progressbar(parametric_frame, maximum=100, length=300)
+progress_bar.pack(pady=5)
+
+progress_label = ttk.Label(parametric_frame, text="Hesaplama: 0% tamamlandı, Kalan süre: -")
+progress_label.pack(pady=5)
+
+# En optimal kombinasyon için label
+optimal_label = ttk.Label(parametric_frame, text="En Optimal Kombinasyon: Henüz hesaplanmadı")
+optimal_label.pack(pady=10)
+
 para_results_frame = ttk.LabelFrame(parametric_frame, text="Parametrik Sonuçlar", padding=5)
 para_results_frame.pack(fill='x', padx=10, pady=5)
 para_results_tree = ttk.Treeview(para_results_frame, show="headings", height=7)
@@ -907,13 +997,14 @@ para_scrollbar = ttk.Scrollbar(para_results_frame, orient="horizontal", command=
 para_scrollbar.pack(side="bottom", fill="x")
 para_results_tree.configure(xscrollcommand=para_scrollbar.set)
 
-# Graph selection and drawing
+# Grafik seçimi ve çizim
 para_graph_frame = ttk.Frame(para_results_frame)
 para_graph_frame.pack(fill='x', pady=5)
 tk.Label(para_graph_frame, text="Grafik Parametresi:").pack(side="left", padx=5)
 param_to_graph_var = tk.StringVar()
 ttk.Combobox(para_graph_frame, textvariable=param_to_graph_var, values=['Cıvata Boyutu', 'Gövde Uzunluğu', 'Dişli Kısım Uzunluğu', 'Ön Yükleme Yüzdesi', 'Çekme Kuvveti'], width=20).pack(side="left", padx=5)
 ttk.Button(para_graph_frame, text="Grafik Çiz", command=draw_parametric_graph).pack(side="left", padx=5)
+ttk.Button(para_graph_frame, text="Optimal Grafik Çiz", command=draw_optimal_graph).pack(side="left", padx=5)
 
 para_plot_frame = ttk.LabelFrame(parametric_frame, text="Parametrik Grafik", padding=5)
 para_plot_frame.pack(fill='both', expand=True, padx=10, pady=5)
