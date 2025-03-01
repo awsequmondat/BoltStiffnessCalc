@@ -1,66 +1,152 @@
-Cıvata Sertliği Hesaplama: Detaylı Analiz
+# Cıvata Sertliği Hesaplama Bilgileri
 
-Giriş
-Cıvata sertliği hesaplayıcısı, cıvatalı birleşmelerin tasarımında önemli bir araçtır. Bu analiz, cıvata sertliğinin ne olduğunu, neyi hesapladığını, nasıl hesaplandığını ve uygulamada nasıl kullanıldığını detaylı bir şekilde ele alır. Amacımız, sıfırdan bilmeyen bir kullanıcıya, hatta teknik bilgisi olmayan birine, konuyu anlaşılır bir şekilde aktarmaktır.
+Bu program, cıvata sertliği, kavrama sertliği ve güvenlik faktörü gibi temel mekanik tasarım parametrelerini hesaplamak için geliştirilmiştir. Tekil hesaplama yapabileceğiniz gibi, parametrik analizlerle birden fazla senaryoyu aynı anda değerlendirebilirsiniz. Ayrıca, malzeme kütüphanesi ile özelleştirilmiş malzeme tanımlamaları ekleyebilirsiniz.
 
-Cıvata Sertliği: Tanım ve Önemi
-Cıvata sertliği, bir cıvatanın yük altında ne kadar esnediğini ölçen bir parametredir. Bir cıvatayı, üzerine bastığınızda esneyen ama kopmayan bir yay gibi düşünebilirsiniz. Eğer cıvata çok esnerse, bağlı olduğu parçaları iyi tutamaz; çok sert olursa, kırılabilir. Bu, özellikle makine parçalarını birleştirirken, örneğin bir motor kapağını gövdesine bağlarken, çok önemlidir.
-Cıvata sertliği, cıvatalı birleşmelerin performansını anlamak için kritik öneme sahiptir. Bu, özellikle yük altında birleşmenin gevşememesi, parçaların ayrılmaması ve genel yapının güvenilirliği için önemlidir. Araştırma, cıvata sertliğinin, cıvatanın gövde (şank) ve dişli kısımlarının ayrı ayrı sertliklerinin seri olarak birleştirilmesiyle hesaplandığını gösteriyor (MechaniCalc Bolted Joint Analysis).
+---
 
-Neyi Hesaplar?
-Cıvata sertliği hesaplayıcısı, cıvatanın ne kadar yük altında esneceğini hesaplar. Bu, cıvatanın iki ana kısmını dikkate alır:
-- Gövde (Şank): Cıvatanın düz, dişsiz kısmı. Bu, genellikle birleştirilen parçaların içinden geçen kısmıdır.
-- Dişli Kısım: Somunun vidalandığı, tırtıklı bölge. Bu, cıvatanın ucunda bulunur ve yük altında esneme katkısı sağlar.
-Hesaplama, bu iki kısmın esneme miktarını birleştirerek toplam cıvata sertliğini bulur. Sonuç, cıvatanın 1 mm esnemesi için ne kadar kuvvete ihtiyaç duyduğunu gösterir (N/mm cinsinden). Bu, cıvatanın ne kadar sağlam olduğunu ve ne kadar yük taşıyabileceğini anlamak için kullanılır.
+## Teorik Bilgiler
 
-Nasıl Hesaplanır?
-Hesaplama, mekanik mühendislik prensiplerine dayanır ve şu adımları izler:
+### 1. Cıvata Sertliği
 
-Gerekli Veriler:
-- Cıvata boyutu (örneğin M10, M12 gibi). Bu, cıvatanın çapını ve standart kesit alanlarını belirler.
-- Gövde uzunluğu (L_shank): Cıvatanın düz kısmının gerginlikteki uzunluğu, genellikle kavrama uzunluğuna (birleştirilen parçaların toplam kalınlığı) eşittir.
-- Dişli kısım uzunluğu (L_thread): Dişli kısmın gerginlikteki uzunluğu, eğer gövde kavrama uzunluğunu tamamen kapsıyorsa sıfır olabilir.
-- Malzeme elastiklik modülü (E_bolt): Cıvatanın ne kadar esnek olduğunu gösteren bir sayı, çelik için genellikle 200,000 MPa.
-- Kesit alanları (A_gövde ve A_dişli) standart tablolardan alınır. Örneğin, M10 için:
-  - $$ A_{\text{gövde}} = 78.54 \, \text{mm}^2 $$ (nominal alan),
-  - $$ A_{\text{dişli}} = 58.0 \, \text{mm}^2 $$ (çekme gerilme alanı).
+Cıvata sertliği \( k_b \), cıvatanın eksenel yük altında deformasyona karşı gösterdiği direnci ifade eder. Temel formül aşağıdaki gibidir:
 
-Gövde Sertliği Hesaplama:
-Gövde kısmı için şu formül kullanılır:
-$$ k_{\text{gövde}} = \frac{E_{\text{bolt}} \times A_{\text{gövde}}}{L_{\text{shank}}} $$
-Bu, gövdenin ne kadar sert olduğunu gösterir. Örneğin, $$ E_{\text{bolt}} = 200,000 $$, $$ A_{\text{gövde}} = 78.54 $$, $$ L_{\text{shank}} = 50 $$ ise:
-$$ k_{\text{gövde}} = \frac{200,000 \times 78.54}{50} = 314,160 \, \text{N/mm} $$
+$$
+k_b = \frac{E \cdot A}{L}
+$$
 
-Dişli Kısım Sertliği Hesaplama:
-Dişli kısım için benzer bir formül kullanılır:
-$$ k_{\text{dişli}} = \frac{E_{\text{bolt}} \times A_{\text{dişli}}}{L_{\text{thread}}} $$
-Eğer $$ L_{\text{thread}} = 0 $$ ise, bu kısım hesaba katılmaz (sonsuz sertlik kabul edilir). Örneğin, $$ A_{\text{dişli}} = 58.0 $$, $$ L_{\text{thread}} = 20 $$ ise:
-$$ k_{\text{dişli}} = \frac{200,000 \times 58.0}{20} = 580,000 \, \text{N/mm} $$
+- **\( E \)**: Cıvata malzemesinin elastiklik modülü (MPa)
+- **\( A \)**: Cıvatanın kesit alanı (mm²)
+- **\( L \)**: Cıvatanın etkili uzunluğu (mm)
 
-Toplam Cıvata Sertliği:
-Gövde ve dişli kısım, seri olarak birleştirildiği için toplam sertlik şu formülle bulunur:
-$$ k_{\text{bolt}} = \frac{1}{\frac{1}{k_{\text{gövde}}} + \frac{1}{k_{\text{dişli}}}} $$
-Örnekte, $$ k_{\text{gövde}} = 314,160 $$, $$ k_{\text{dişli}} = 580,000 $$ ise:
-$$ k_{\text{bolt}} = \frac{1}{\frac{1}{314,160} + \frac{1}{580,000}} \approx 203,769 \, \text{N/mm} $$
+Eğer cıvata, gövde (shank) ve dişli (thread) kısımlarından oluşuyorsa, sertlik seri yay sistemi olarak hesaplanır:
 
-L_shank ve L_thread Nasıl Belirlenir?
-- L_shank (Gövde Uzunluğu): Bu, cıvatanın düz kısmının gerginlikteki uzunluğudur. Genellikle kavrama uzunluğu (birleştirilen parçaların toplam kalınlığı) olarak alınır, eğer gövde kavrama uzunluğundan uzunsa.
-- L_thread (Dişli Kısım Uzunluğu): Bu, dişli kısmın gerginlikteki uzunluğudur. Eğer gövde kavrama uzunluğunu tamamen kapsıyorsa, $$ L_{\text{thread}} = 0 $$ olur. Eğer kavrama uzunluğu gövdeden uzunsa, $$ L_{\text{thread}} = \text{kavrama uzunluğu} - L_{\text{shank}} $$ olur.
+$$
+k_b = \frac{1}{\frac{1}{k_{\text{shank}}} + \frac{1}{k_{\text{thread}}}}
+$$
 
-Standart Cıvata Boyutları ve Özellikleri
-Aşağıda, yaygın metrik cıvata boyutları için kesit alanları tablo halinde verilmiştir:
-- M6: Nominal Çap: 6 mm, $$ A_{\text{gövde}} = 28.27 \, \text{mm}^2 $$, $$ A_{\text{dişli}} = 20.1 \, \text{mm}^2 $$
-- M8: Nominal Çap: 8 mm, $$ A_{\text{gövde}} = 50.27 \, \text{mm}^2 $$, $$ A_{\text{dişli}} = 36.6 \, \text{mm}^2 $$
-- M10: Nominal Çap: 10 mm, $$ A_{\text{gövde}} = 78.54 \, \text{mm}^2 $$, $$ A_{\text{dişli}} = 58.0 \, \text{mm}^2 $$
-- M12: Nominal Çap: 12 mm, $$ A_{\text{gövde}} = 113.10 \, \text{mm}^2 $$, $$ A_{\text{dişli}} = 84.3 \, \text{mm}^2 $$
-Bu değerler, standart mühendislik tablolarından alınmıştır (Eurocode Applied Bolt Design Properties).
+---
 
-Örnek Hesaplama ve Uygulama
-Bir örnekle konuyu netleştirelim. Diyelim ki bir M10 cıvata, gövde uzunluğu 50 mm, dişli kısım uzunluğu 20 mm, ve $$ E_{\text{bolt}} = 200,000 \, \text{MPa} $$:
-- Gövde sertliği: $$ 314,160 \, \text{N/mm} $$
-- Dişli kısım sertliği: $$ 580,000 \, \text{N/mm} $$
-- Toplam sertlik: $$ 203,769 \, \text{N/mm} $$
-Bu, cıvatanın oldukça sağlam olduğunu ve az esneyeceğini gösterir. Bu tür hesaplamalar, cıvatalı birleşmelerin tasarımında kullanılır ve sonuçlar, mekanik mühendislik kaynaklarıyla karşılaştırılabilir (MechaniCalc Bolted Joint Analysis Calculator).
+### 2. Kavrama Sertliği
 
-Beklenmedik Detay: Dişli Kısım Uzunluğu
-Beklenmedik bir detay, dişli kısım uzunluğunun sıfır olabileceği durumdur. Bu, gövdenin tüm yükü taşıdığı anlamına gelir ve standart birleşmelerde sık görülür. Bu durum, cıvatanın daha sert olduğunu gösterir, çünkü dişli kısım genellikle daha az dayanıklıdır.
+Kavrama sertliği \( k_c \), cıvatanın sıkıştırdığı parçaların toplam sertliğini temsil eder. Formülü şu şekildedir:
+
+$$
+k_c = \frac{1}{\sum \frac{L_i}{E_i \cdot A_i}}
+$$
+
+- **\( L_i \)**: Her bir sıkıştırılan parçanın kalınlığı (mm)
+- **\( E_i \)**: Her bir parçanın elastiklik modülü (MPa)
+- **\( A_i \)**: Her bir parçanın kesit alanı (mm²)
+
+Bu hesaplama, sıkıştırılan tüm parçaların sertliklerinin terslerinin toplamına dayanır.
+
+---
+
+### 3. Güvenlik Faktörü
+
+Güvenlik faktörü, cıvatanın taşıyabileceği maksimum kuvvetin, uygulanan toplam kuvvete oranını ifade eder. Kullanıcı, güvenlik faktörünü "Verim Dayanımı" veya "Nihai Dayanım" temelinde hesaplayabilir:
+
+- **Verim Dayanımı Temelli**:
+
+$$
+\text{Güvenlik Faktörü} = \frac{\sigma_{\text{yield}} \cdot A_{\text{thread}}}{F_{\text{bolt total}}}
+$$
+
+- **Nihai Dayanım Temelli**:
+
+$$
+\text{Güvenlik Faktörü} = \frac{\sigma_{\text{ultimate}} \cdot A_{\text{thread}}}{F_{\text{bolt total}}}
+$$
+
+- **\( \sigma_{\text{yield}} \)**: Malzemenin verim dayanımı (MPa)
+- **\( \sigma_{\text{ultimate}} \)**: Malzemenin nihai dayanımı (MPa)
+- **\( A_{\text{thread}} \)**: Dişli kesit alanı (mm²)
+- **\( F_{\text{bolt total}} \)**: Cıvataya uygulanan toplam kuvvet (N)
+
+---
+
+## Program Kullanımı
+
+### 1. Arayüz ve Sekmeler
+
+Programın ana arayüzü aşağıdaki sekmelerden oluşur:
+- **Hesaplama**: Tekil cıvata sertliği ve güvenlik faktörü hesaplamaları için kullanılır.
+- **Malzeme Kütüphanesi**: Malzeme ekleme, düzenleme ve silme işlemleri için tasarlanmıştır.
+- **Parametrik Analiz**: Birden fazla parametre kombinasyonuyla toplu analizler yapar.
+- **Bilgi**: Programın teorik altyapısı ve kullanım rehberini içerir.
+
+---
+
+### 2. Hesaplama Sekmesi
+
+Bu sekmede, cıvata parametrelerini girerek tekil hesaplama yapabilirsiniz.
+
+- **Giriş Parametreleri**:
+  - Cıvata Boyutu (örn. M10)
+  - Gövde Uzunluğu (mm)
+  - Dişli Kısım Uzunluğu (mm)
+  - Malzeme (Malzeme Kütüphanesinden seçilir, örn. Steel)
+  - Ön Yükleme Yüzdesi (%)
+  - Çekme ve Kesme Kuvvetleri (N)
+
+- **Sıkıştırılan Parçalar**:
+  - "Parça Ekle" butonu ile washer, plate veya cylinder gibi elemanlar eklenir.
+  - Her parça için kalınlık, malzeme ve kesit alanı tanımlanır.
+
+- **Butonlar**:
+  - **Hesapla**: Girilen verilere göre sonuçları ve yük-çarpılma eğrisini gösterir.
+  - **Temizle**: Tüm giriş alanlarını sıfırlar.
+  - **Test**: Örnek bir veri seti yükleyerek testi başlatır.
+
+---
+
+### 3. Malzeme Kütüphanesi
+
+Malzeme Kütüphanesi sekmesi, kullanıcıların özelleştirilmiş malzemeler tanımlamasını sağlar.
+
+- **Gerekli Alanlar**:
+  - Malzeme Adı
+  - Elastiklik Modülü (GPa)
+  - Verim Dayanımı (MPa)
+  - Nihai Dayanım (MPa)
+
+- **Opsiyonel Alanlar**:
+  - Poisson Oranı
+  - Uzama Yüzdesi (%)
+  - Yoğunluk (g/cm³)
+
+- **Butonlar**:
+  - **Kaydet**: Yeni malzeme ekler veya mevcut bir malzemeyi günceller.
+  - **Yeni**: Giriş alanlarını temizler.
+  - **Sil**: Seçili malzemeyi kütüphaneden kaldırır.
+
+---
+
+### 4. Parametrik Analiz
+
+Parametrik Analiz sekmesi, birden fazla parametre kombinasyonuyla toplu analizler yapmanıza olanak tanır.
+
+- **Parametre Girişleri**:
+  - Cıvata boyutları, uzunluklar ve kuvvetler gibi parametreler virgülle ayrılarak veya "Tanımla" butonu ile aralık belirlenerek girilir.
+  - Örnek: `M8, M10, M12` veya `10-20, step 2`
+
+- **Sıkıştırılan Parçalar**:
+  - En az bir parça eklenmelidir.
+
+- **Butonlar**:
+  - **Hesapla**: Analizi başlatır ve sonuçları tablo olarak gösterir.
+  - **İptal Et**: Devam eden analizi durdurur.
+
+- **Sonuçlar**:
+  - En optimal kombinasyon vurgulanır.
+  - Detaylı tablo ve grafikler analiz raporunda sunulur.
+
+---
+
+## Notlar
+
+- Program, *Shigley's Mechanical Engineering Design* kitabındaki metodolojiyi esas alır.
+- Matematiksel formüller, LaTeX formatında `$$` işaretleriyle render edilir.
+- Parametrik analizde büyük veri setleri için disk belleği kullanılır, bu da performansı optimize eder.
+
+Bu içerik, programın hem teorik hem de pratik yönlerini kapsamlı bir şekilde açıklar ve kullanıcıların programı etkili bir şekilde kullanmasına yardımcı olur.
