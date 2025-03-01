@@ -11,6 +11,7 @@ import threading
 import queue
 import sqlite3
 import os
+import json
 
 # Cıvata boyutları ve malzeme özellikleri
 bolt_sizes = {
@@ -68,15 +69,177 @@ clamped_part_types = ['Washer', 'Plate', 'Cylinder']
 # Global değişkenler
 current_material = None
 clamped_parts_frames = []
+parametric_clamped_parts_frames = []  # Parametrik hesaplama için bağımsız parça listesi
 results_history = []
 max_rows = 5
 canvas = None
 para_canvas = None
 parametric_results = []
 analysis_queue = queue.Queue()
-cancel_flag = threading.Event()  # Daha güvenli iptal mekanizması için
-db_path = "parametric_results.db"  # SQLite veritabanı dosyası
+cancel_flag = threading.Event()
+db_path = "parametric_results.db"
+test_buttons = []
+notebook = None
+bolt_size_var = None
+shank_length_var = None
+thread_length_var = None
+material_var = None
+preload_percent_var = None
+tensile_force_var = None
+shear_force_var = None
+shear_area_var = None
+safety_basis_var = None
+clamped_parts_frame = None
+results_tree = None
+material_tree = None
+para_results_tree = None
+param_to_graph_var = None
+progress_bar = None
+progress_label = None
+optimal_label = None
+para_plot_frame = None
+plot_frame = None
+material_entry = None
+max_rows_var = None
+param_bolt_size_var = None
+param_shank_length_var = None
+param_thread_length_var = None
+param_preload_percent_var = None
+param_tensile_force_var = None
 
+# Dil desteği için sözlük
+dil_sozlugu = {
+    "tr": {
+        "hesaplama": "Hesaplama",
+        "parametre_tanimlama": "Parametre Tanımlama",
+        "civata_boyutu": "Cıvata Boyutu:",
+        "govde_uzunlugu": "Gövde Uzunluğu (mm):",
+        "disli_kisim_uzunlugu": "Dişli Kısım Uzunluğu (mm):",
+        "malzeme": "Malzeme:",
+        "on_yukleme_yuzdesi": "Ön Yükleme Yüzdesi (%):",
+        "cekme_kuvveti": "Çekme Kuvveti (N):",
+        "kesme_kuvveti": "Kesme Kuvveti (N):",
+        "kesme_alani": "Kesme Alanı",
+        "govde": "Gövde",
+        "disli": "Dişli",
+        "guvenlik_faktoru": "Güvenlik Faktörü",
+        "verim": "Verim",
+        "nihai": "Nihai",
+        "parca_ekle": "Parça Ekle",
+        "hesapla": "Hesapla",
+        "temizle": "Temizle",
+        "test": "Test",
+        "sonuclar_tablosu": "Sonuçlar Tablosu",
+        "gosterilecek_hesaplama_sayisi": "Gösterilecek Hesaplama Sayısı:",
+        "guncelle": "Güncelle",
+        "excel_aktar": "Excel'e Aktar",
+        "yuk_carpilma_egrisi": "Yük-Çarpılma Eğrisi",
+        "malzeme_kutuphanesi": "Malzeme Kütüphanesi",
+        "malzeme_adi": "Malzeme Adı *:",
+        "elastiklik_modulu": "Elastiklik Modülü (GPa) *:",
+        "verim_dayanimi": "Verim Dayanımı (MPa) *:",
+        "nihai_dayanimi": "Nihai Dayanım (MPa) *:",
+        "poisson_orani": "Poisson Oranı:",
+        "uzama_yuzdesi": "Uzama Yüzdesi (%):",
+        "yogunluk": "Yoğunluk (g/cm³):",
+        "malzeme_ozellikleri": "Malzeme Özellikleri",
+        "kaydet": "Kaydet",
+        "yeni": "Yeni",
+        "sil": "Sil",
+        "parametrik_hesaplama": "Parametrik Hesaplama",
+        "iptal_et": "İptal Et",
+        "en_optimal_kombinasyon": "En Optimal Kombinasyon",
+        "parametrik_sonuclar": "Parametrik Sonuçlar",
+        "grafik_parametresi": "Grafik Parametresi:",
+        "grafik_ciz": "Grafik Çiz",
+        "optimal_grafik_ciz": "Optimal Grafik Çiz",
+        "parametrik_grafik": "Parametrik Grafik",
+        "bilgi": "Bilgi",
+        "ayarlar": "Ayarlar",
+        "dil_secimi": "Dil Seçimi",
+        "gelistirici_modu": "Geliştirici Modu",
+        "test_degerleri_yuklendi": "Test değerleri yüklendi. 'Hesapla' butonuna basarak sonuçları görebilirsiniz.",
+        "sıkıştırılan_parca_tanimlama": "Sıkıştırılan Parça Tanımlama"
+    },
+    "en": {
+        "hesaplama": "Calculation",
+        "parametre_tanimlama": "Parameter Definition",
+        "civata_boyutu": "Bolt Size:",
+        "govde_uzunlugu": "Shank Length (mm):",
+        "disli_kisim_uzunlugu": "Thread Length (mm):",
+        "malzeme": "Material:",
+        "on_yukleme_yuzdesi": "Preload Percentage (%):",
+        "cekme_kuvveti": "Tensile Force (N):",
+        "kesme_kuvveti": "Shear Force (N):",
+        "kesme_alani": "Shear Area",
+        "govde": "Shank",
+        "disli": "Thread",
+        "guvenlik_faktoru": "Safety Factor",
+        "verim": "Yield",
+        "nihai": "Ultimate",
+        "parca_ekle": "Add Part",
+        "hesapla": "Calculate",
+        "temizle": "Clear",
+        "test": "Test",
+        "sonuclar_tablosu": "Results Table",
+        "gosterilecek_hesaplama_sayisi": "Number of Calculations to Show:",
+        "guncelle": "Update",
+        "excel_aktar": "Export to Excel",
+        "yuk_carpilma_egrisi": "Load-Deflection Curve",
+        "malzeme_kutuphanesi": "Material Library",
+        "malzeme_adi": "Material Name *:",
+        "elastiklik_modulu": "Elastic Modulus (GPa) *:",
+        "verim_dayanimi": "Yield Strength (MPa) *:",
+        "nihai_dayanimi": "Ultimate Strength (MPa) *:",
+        "poisson_orani": "Poisson's Ratio:",
+        "uzama_yuzdesi": "Percent Elongation (%):",
+        "yogunluk": "Density (g/cm³):",
+        "malzeme_ozellikleri": "Material Properties",
+        "kaydet": "Save",
+        "yeni": "New",
+        "sil": "Delete",
+        "parametrik_hesaplama": "Parametric Calculation",
+        "iptal_et": "Cancel",
+        "en_optimal_kombinasyon": "Most Optimal Combination",
+        "parametrik_sonuclar": "Parametric Results",
+        "grafik_parametresi": "Graph Parameter:",
+        "grafik_ciz": "Draw Graph",
+        "optimal_grafik_ciz": "Draw Optimal Graph",
+        "parametrik_grafik": "Parametric Graph",
+        "bilgi": "Information",
+        "ayarlar": "Settings",
+        "dil_secimi": "Language Selection",
+        "gelistirici_modu": "Developer Mode",
+        "test_degerleri_yuklendi": "Test values loaded. Press 'Calculate' to see results.",
+        "sıkıştırılan_parca_tanimlama": "Clamped Part Definition"
+    }
+}
+
+# Geliştirici modu kontrolü
+dev_mode = False
+def toggle_dev_mode():
+    global test_buttons
+    for btn in test_buttons:
+        if dev_mode:
+            btn.pack(side="left", padx=5)
+        else:
+            btn.pack_forget()
+
+# Konfigürasyon dosyası işlemleri
+def load_config():
+    try:
+        with open("config.json", "r") as f:
+            config = json.load(f)
+            return config["dil"], config["dev_mode"]
+    except FileNotFoundError:
+        return "tr", False
+
+def save_config(dil, dev_mode):
+    config = {"dil": dil, "dev_mode": dev_mode}
+    with open("config.json", "w") as f:
+        json.dump(config, f)
+
+# ToolTip sınıfı
 class ToolTip:
     def __init__(self, widget, text):
         self.widget = widget
@@ -101,6 +264,303 @@ class ToolTip:
             self.tipwindow.destroy()
             self.tipwindow = None
 
+# Sekmeleri oluşturma fonksiyonu
+def create_all_frames(dil, dev_mode_flag):
+    global dev_mode, notebook
+    dev_mode = dev_mode_flag
+    for widget in notebook.winfo_children():
+        widget.destroy()
+
+    # Stil tanımlamaları
+    style = ttk.Style()
+    style.theme_use("clam")
+    style.configure("TFrame", background="#F0F0F0")  # Açık gri arka plan
+    style.configure("TLabel", background="#F0F0F0", foreground="#333333")  # Koyu gri yazı
+    style.configure("TButton", background="#F0F0F0", foreground="#333333", padding=5)
+    style.map("TButton", background=[("active", "#E0E0E0")])
+    style.configure("Accent.TButton", background="#4CAF50", foreground="white")  # Yeşil
+    style.map("Accent.TButton", background=[("active", "#45A049")])
+    style.configure("Danger.TButton", background="#F44336", foreground="white")  # Kırmızı
+    style.map("Danger.TButton", background=[("active", "#D32F2F")])
+    style.configure("Test.TButton", background="#FF9800", foreground="white")  # Turuncu
+    style.map("Test.TButton", background=[("active", "#F57C00")])
+    style.configure("Export.TButton", background="#3F51B5", foreground="white")  # Mavi
+    style.map("Export.TButton", background=[("active", "#303F9F")])
+    root.configure(bg="#F0F0F0")
+
+    # Hesaplama sekmesi
+    calc_frame = ttk.Frame(notebook)
+    notebook.add(calc_frame, text=dil_sozlugu[dil]["hesaplama"])
+    create_calc_frame(calc_frame, dil)
+
+    # Malzeme Kütüphanesi sekmesi
+    material_frame = ttk.Frame(notebook)
+    notebook.add(material_frame, text=dil_sozlugu[dil]["malzeme_kutuphanesi"])
+    create_material_frame(material_frame, dil)
+
+    # Parametrik Hesaplama sekmesi
+    parametric_frame = ttk.Frame(notebook)
+    notebook.add(parametric_frame, text=dil_sozlugu[dil]["parametrik_hesaplama"])
+    create_parametric_frame(parametric_frame, dil)
+
+    # Wiki sekmesi
+    wiki_frame = ttk.Frame(notebook)
+    notebook.add(wiki_frame, text=dil_sozlugu[dil]["bilgi"])
+    create_wiki_frame(wiki_frame, dil)
+
+    # Ayarlar sekmesi
+    settings_frame = ttk.Frame(notebook)
+    notebook.add(settings_frame, text=dil_sozlugu[dil]["ayarlar"])
+    create_settings_frame(settings_frame, dil, dev_mode)
+
+    toggle_dev_mode()
+
+# Hesaplama sekmesi oluşturma
+def create_calc_frame(parent, dil):
+    global bolt_size_var, shank_length_var, thread_length_var, material_var, preload_percent_var, tensile_force_var, shear_force_var, shear_area_var, safety_basis_var, clamped_parts_frame, results_tree, plot_frame, material_entry, max_rows_var, test_buttons
+    input_frame = ttk.LabelFrame(parent, text=dil_sozlugu[dil]["parametre_tanimlama"], padding=5)
+    input_frame.pack(side="left", fill='y', padx=5, pady=5)
+
+    tk.Label(input_frame, text=dil_sozlugu[dil]["civata_boyutu"]).grid(row=0, column=0, padx=10, pady=5, sticky="e")
+    bolt_size_var = tk.StringVar()
+    bolt_size_entry = ttk.Combobox(input_frame, textvariable=bolt_size_var, values=list(bolt_sizes.keys()), width=15)
+    bolt_size_entry.grid(row=0, column=1, padx=10, pady=5)
+    ToolTip(bolt_size_entry, dil_sozlugu[dil]["civata_boyutu"])
+
+    tk.Label(input_frame, text=dil_sozlugu[dil]["govde_uzunlugu"]).grid(row=1, column=0, padx=10, pady=5, sticky="e")
+    shank_length_var = tk.StringVar()
+    tk.Entry(input_frame, textvariable=shank_length_var, width=20).grid(row=1, column=1, padx=10, pady=5)
+
+    tk.Label(input_frame, text=dil_sozlugu[dil]["disli_kisim_uzunlugu"]).grid(row=2, column=0, padx=10, pady=5, sticky="e")
+    thread_length_var = tk.StringVar()
+    tk.Entry(input_frame, textvariable=thread_length_var, width=20).grid(row=2, column=1, padx=10, pady=5)
+
+    tk.Label(input_frame, text=dil_sozlugu[dil]["malzeme"]).grid(row=3, column=0, padx=10, pady=5, sticky="e")
+    material_var = tk.StringVar(value='Steel')
+    material_entry = ttk.Combobox(input_frame, textvariable=material_var, values=list(materials.keys()), width=18, state="readonly")
+    material_entry.grid(row=3, column=1, padx=10, pady=5)
+
+    tk.Label(input_frame, text=dil_sozlugu[dil]["on_yukleme_yuzdesi"]).grid(row=4, column=0, padx=10, pady=5, sticky="e")
+    preload_percent_var = tk.StringVar(value='67')
+    tk.Entry(input_frame, textvariable=preload_percent_var, width=20).grid(row=4, column=1, padx=10, pady=5)
+
+    tk.Label(input_frame, text=dil_sozlugu[dil]["cekme_kuvveti"]).grid(row=5, column=0, padx=10, pady=5, sticky="e")
+    tensile_force_var = tk.StringVar()
+    tk.Entry(input_frame, textvariable=tensile_force_var, width=20).grid(row=5, column=1, padx=10, pady=5)
+
+    tk.Label(input_frame, text=dil_sozlugu[dil]["kesme_kuvveti"]).grid(row=6, column=0, padx=10, pady=5, sticky="e")
+    shear_force_var = tk.StringVar()
+    tk.Entry(input_frame, textvariable=shear_force_var, width=20).grid(row=6, column=1, padx=10, pady=5)
+
+    shear_frame = ttk.LabelFrame(input_frame, text=dil_sozlugu[dil]["kesme_alani"], padding=2)
+    shear_frame.grid(row=7, column=0, columnspan=2, pady=5)
+    shear_area_var = tk.StringVar(value="Thread")
+    ttk.Radiobutton(shear_frame, text=dil_sozlugu[dil]["govde"], variable=shear_area_var, value="Shank").pack(side="left", padx=2)
+    ttk.Radiobutton(shear_frame, text=dil_sozlugu[dil]["disli"], variable=shear_area_var, value="Thread").pack(side="left", padx=2)
+
+    safety_frame = ttk.LabelFrame(input_frame, text=dil_sozlugu[dil]["guvenlik_faktoru"], padding=2)
+    safety_frame.grid(row=8, column=0, columnspan=2, pady=5)
+    safety_basis_var = tk.StringVar(value="Yield")
+    ttk.Radiobutton(safety_frame, text=dil_sozlugu[dil]["verim"], variable=safety_basis_var, value="Yield").pack(side="left", padx=2)
+    ttk.Radiobutton(safety_frame, text=dil_sozlugu[dil]["nihai"], variable=safety_basis_var, value="Ultimate").pack(side="left", padx=2)
+
+    clamped_parts_frame = ttk.Frame(input_frame)
+    clamped_parts_frame.grid(row=9, column=0, columnspan=2, pady=5)
+    ttk.Button(input_frame, text=dil_sozlugu[dil]["parca_ekle"], command=add_clamped_part, style="Accent.TButton").grid(row=10, column=0, columnspan=2, pady=5)
+
+    button_frame = ttk.Frame(input_frame)
+    button_frame.grid(row=11, column=0, columnspan=2, pady=10)
+    ttk.Button(button_frame, text=dil_sozlugu[dil]["hesapla"], command=calculate_stiffness, style="Accent.TButton").pack(side="left", padx=5)
+    ttk.Button(button_frame, text=dil_sozlugu[dil]["temizle"], command=clear_inputs, style="Danger.TButton").pack(side="left", padx=5)
+    test_button = ttk.Button(button_frame, text=dil_sozlugu[dil]["test"], command=test_values, style="Test.TButton")
+    test_button.pack(side="left", padx=5)
+    test_buttons = [test_button]
+
+    right_frame = ttk.Frame(parent)
+    right_frame.pack(side="right", fill='both', expand=True, padx=10, pady=5)
+
+    result_frame = ttk.LabelFrame(right_frame, text=dil_sozlugu[dil]["sonuclar_tablosu"], padding=5)
+    result_frame.pack(fill='x', pady=5)
+    rows_frame = ttk.Frame(result_frame)
+    rows_frame.pack(fill='x', pady=5)
+    tk.Label(rows_frame, text=dil_sozlugu[dil]["gosterilecek_hesaplama_sayisi"]).pack(side="left", padx=5)
+    max_rows_var = tk.StringVar(value=str(max_rows))
+    tk.Entry(rows_frame, textvariable=max_rows_var, width=5).pack(side="left", padx=5)
+    ttk.Button(rows_frame, text=dil_sozlugu[dil]["guncelle"], command=update_results_table).pack(side="left", padx=5)
+    ttk.Button(rows_frame, text=dil_sozlugu[dil]["excel_aktar"], command=export_to_excel, style="Export.TButton").pack(side="left", padx=5)
+    ttk.Button(rows_frame, text=dil_sozlugu[dil]["temizle"], command=clear_results, style="Danger.TButton").pack(side="left", padx=5)
+
+    results_tree = ttk.Treeview(result_frame, height=7, show="headings")
+    results_tree.pack(fill='x')
+    scrollbar = ttk.Scrollbar(result_frame, orient="horizontal", command=results_tree.xview)
+    scrollbar.pack(side="bottom", fill="x")
+    results_tree.configure(xscrollcommand=scrollbar.set)
+
+    plot_frame = ttk.LabelFrame(right_frame, text=dil_sozlugu[dil]["yuk_carpilma_egrisi"], padding=5)
+    plot_frame.pack(fill='both', expand=True)
+
+# Malzeme Kütüphanesi sekmesi oluşturma
+def create_material_frame(parent, dil):
+    global material_tree
+    material_input_frame = ttk.Frame(parent)
+    material_input_frame.pack(fill='both', expand=True, padx=5, pady=5)
+
+    input_subframe = ttk.Frame(material_input_frame)
+    input_subframe.pack(fill='x', pady=5)
+
+    tk.Label(input_subframe, text=dil_sozlugu[dil]["malzeme_adi"]).grid(row=0, column=0, padx=5, pady=2, sticky="e")
+    material_name_var = tk.StringVar()
+    material_name_entry = tk.Entry(input_subframe, textvariable=material_name_var, width=20)
+    material_name_entry.grid(row=0, column=1, padx=5, pady=2)
+
+    tk.Label(input_subframe, text=dil_sozlugu[dil]["elastiklik_modulu"]).grid(row=1, column=0, padx=5, pady=2, sticky="e")
+    material_E_var = tk.StringVar()
+    tk.Entry(input_subframe, textvariable=material_E_var, width=20).grid(row=1, column=1, padx=5, pady=2)
+
+    tk.Label(input_subframe, text=dil_sozlugu[dil]["verim_dayanimi"]).grid(row=2, column=0, padx=5, pady=2, sticky="e")
+    material_yield_var = tk.StringVar()
+    tk.Entry(input_subframe, textvariable=material_yield_var, width=20).grid(row=2, column=1, padx=5, pady=2)
+
+    tk.Label(input_subframe, text=dil_sozlugu[dil]["nihai_dayanimi"]).grid(row=3, column=0, padx=5, pady=2, sticky="e")
+    material_ultimate_var = tk.StringVar()
+    tk.Entry(input_subframe, textvariable=material_ultimate_var, width=20).grid(row=3, column=1, padx=5, pady=2)
+
+    tk.Label(input_subframe, text=dil_sozlugu[dil]["poisson_orani"]).grid(row=4, column=0, padx=5, pady=2, sticky="e")
+    material_poisson_var = tk.StringVar()
+    tk.Entry(input_subframe, textvariable=material_poisson_var, width=20).grid(row=4, column=1, padx=5, pady=2)
+
+    tk.Label(input_subframe, text=dil_sozlugu[dil]["uzama_yuzdesi"]).grid(row=5, column=0, padx=5, pady=2, sticky="e")
+    material_elongation_var = tk.StringVar()
+    tk.Entry(input_subframe, textvariable=material_elongation_var, width=20).grid(row=5, column=1, padx=5, pady=2)
+
+    tk.Label(input_subframe, text=dil_sozlugu[dil]["yogunluk"]).grid(row=6, column=0, padx=5, pady=2, sticky="e")
+    material_density_var = tk.StringVar()
+    tk.Entry(input_subframe, textvariable=material_density_var, width=20).grid(row=6, column=1, padx=5, pady=2)
+
+    material_tree_frame = ttk.LabelFrame(material_input_frame, text=dil_sozlugu[dil]["malzeme_ozellikleri"], padding=5)
+    material_tree_frame.pack(fill='both', expand=True, pady=5)
+    material_tree = ttk.Treeview(material_tree_frame, show="headings")
+    material_tree.pack(fill='both', expand=True)
+    scrollbar = ttk.Scrollbar(material_tree_frame, orient="vertical", command=material_tree.yview)
+    scrollbar.pack(side="right", fill="y")
+    material_tree.configure(yscrollcommand=scrollbar.set)
+    material_tree.bind('<<TreeviewSelect>>', on_material_select)
+    update_material_table()
+
+    material_button_frame = ttk.Frame(material_input_frame)
+    material_button_frame.pack(fill='x', pady=5)
+    ttk.Button(material_button_frame, text=dil_sozlugu[dil]["kaydet"], command=save_material, style="Accent.TButton").pack(side="left", padx=5)
+    ttk.Button(material_button_frame, text=dil_sozlugu[dil]["yeni"], command=new_material, style="TButton").pack(side="left", padx=5)
+    ttk.Button(material_button_frame, text=dil_sozlugu[dil]["sil"], command=delete_material, style="Danger.TButton").pack(side="left", padx=5)
+
+# Parametrik Hesaplama sekmesi oluşturma
+def create_parametric_frame(parent, dil):
+    global para_results_tree, progress_bar, progress_label, optimal_label, para_plot_frame, param_to_graph_var, param_bolt_size_var, param_shank_length_var, param_thread_length_var, param_preload_percent_var, param_tensile_force_var, test_buttons, parametric_clamped_parts_frames
+    para_input_frame = ttk.LabelFrame(parent, text=dil_sozlugu[dil]["parametre_tanimlama"], padding=5)
+    para_input_frame.pack(side="left", fill='y', padx=5, pady=5)
+
+    tk.Label(para_input_frame, text=dil_sozlugu[dil]["civata_boyutu"]).grid(row=0, column=0, padx=5, pady=5)
+    param_bolt_size_var = tk.StringVar()
+    tk.Entry(para_input_frame, textvariable=param_bolt_size_var, width=20).grid(row=0, column=1, padx=5)
+    ttk.Button(para_input_frame, text="Tanımla", command=lambda: define_range(param_bolt_size_var, dil_sozlugu[dil]["civata_boyutu"], False)).grid(row=0, column=2, padx=5)
+
+    tk.Label(para_input_frame, text=dil_sozlugu[dil]["govde_uzunlugu"]).grid(row=1, column=0, padx=5, pady=5)
+    param_shank_length_var = tk.StringVar()
+    tk.Entry(para_input_frame, textvariable=param_shank_length_var, width=20).grid(row=1, column=1, padx=5)
+    ttk.Button(para_input_frame, text="Tanımla", command=lambda: define_range(param_shank_length_var, dil_sozlugu[dil]["govde_uzunlugu"])).grid(row=1, column=2, padx=5)
+
+    tk.Label(para_input_frame, text=dil_sozlugu[dil]["disli_kisim_uzunlugu"]).grid(row=2, column=0, padx=5, pady=5)
+    param_thread_length_var = tk.StringVar()
+    tk.Entry(para_input_frame, textvariable=param_thread_length_var, width=20).grid(row=2, column=1, padx=5)
+    ttk.Button(para_input_frame, text="Tanımla", command=lambda: define_range(param_thread_length_var, dil_sozlugu[dil]["disli_kisim_uzunlugu"])).grid(row=2, column=2, padx=5)
+
+    tk.Label(para_input_frame, text=dil_sozlugu[dil]["on_yukleme_yuzdesi"]).grid(row=3, column=0, padx=5, pady=5)
+    param_preload_percent_var = tk.StringVar()
+    tk.Entry(para_input_frame, textvariable=param_preload_percent_var, width=20).grid(row=3, column=1, padx=5)
+    ttk.Button(para_input_frame, text="Tanımla", command=lambda: define_range(param_preload_percent_var, dil_sozlugu[dil]["on_yukleme_yuzdesi"])).grid(row=3, column=2, padx=5)
+
+    tk.Label(para_input_frame, text=dil_sozlugu[dil]["cekme_kuvveti"]).grid(row=4, column=0, padx=5, pady=5)
+    param_tensile_force_var = tk.StringVar()
+    tk.Entry(para_input_frame, textvariable=param_tensile_force_var, width=20).grid(row=4, column=1, padx=5)
+    ttk.Button(para_input_frame, text="Tanımla", command=lambda: define_range(param_tensile_force_var, dil_sozlugu[dil]["cekme_kuvveti"])).grid(row=4, column=2, padx=5)
+
+    # Sıkıştırılan Parça Tanımlama Bölümü
+    clamped_frame = ttk.LabelFrame(para_input_frame, text=dil_sozlugu[dil]["sıkıştırılan_parca_tanimlama"], padding=5)
+    clamped_frame.grid(row=5, column=0, columnspan=3, pady=5)
+    parametric_clamped_parts_frame = ttk.Frame(clamped_frame)
+    parametric_clamped_parts_frame.pack(fill='x', pady=2)
+    ttk.Button(clamped_frame, text=dil_sozlugu[dil]["parca_ekle"], command=lambda: add_param_clamped_part(parametric_clamped_parts_frame), style="Accent.TButton").pack(pady=5)
+
+    button_frame = ttk.Frame(para_input_frame)
+    button_frame.grid(row=7, column=0, columnspan=3, pady=10)
+    ttk.Button(button_frame, text=dil_sozlugu[dil]["hesapla"], command=run_parametric_analysis, style="Accent.TButton").pack(side="left", padx=5)
+    ttk.Button(button_frame, text=dil_sozlugu[dil]["iptal_et"], command=cancel_analysis, style="Danger.TButton").pack(side="left", padx=5)
+    test_button = ttk.Button(button_frame, text=dil_sozlugu[dil]["test"], command=test_parametric_values, style="Test.TButton")
+    test_button.pack(side="left", padx=5)
+    test_buttons.append(test_button)
+
+    progress_bar = ttk.Progressbar(parent, length=300)
+    progress_bar.pack(pady=5)
+    progress_label = ttk.Label(parent, text="Hesaplama: 0% tamamlandı")
+    progress_label.pack(pady=5)
+
+    optimal_frame = ttk.LabelFrame(parent, text=dil_sozlugu[dil]["en_optimal_kombinasyon"], padding=5)
+    optimal_frame.pack(side="right", fill='y', padx=5, pady=5)
+    optimal_label = ttk.Label(optimal_frame, text="En Optimal Kombinasyon: Henüz hesaplanmadı")
+    optimal_label.pack(pady=5)
+
+    para_results_frame = ttk.LabelFrame(parent, text=dil_sozlugu[dil]["parametrik_sonuclar"], padding=5)
+    para_results_frame.pack(fill='x', padx=10, pady=5)
+    para_results_tree = ttk.Treeview(para_results_frame, show="headings", height=7)
+    para_results_tree.pack(fill='x')
+    para_scrollbar = ttk.Scrollbar(para_results_frame, orient="horizontal", command=para_results_tree.xview)
+    para_scrollbar.pack(side="bottom", fill="x")
+    para_results_tree.configure(xscrollcommand=para_scrollbar.set)
+    ttk.Button(para_results_frame, text=dil_sozlugu[dil]["excel_aktar"], command=export_parametric_to_excel, style="Export.TButton").pack(pady=5)
+
+    para_graph_frame = ttk.Frame(para_results_frame)
+    para_graph_frame.pack(fill='x', pady=5)
+    tk.Label(para_graph_frame, text=dil_sozlugu[dil]["grafik_parametresi"]).pack(side="left", padx=5)
+    param_to_graph_var = tk.StringVar()
+    ttk.Combobox(para_graph_frame, textvariable=param_to_graph_var, values=[dil_sozlugu[dil]["civata_boyutu"].rstrip(":"), dil_sozlugu[dil]["govde_uzunlugu"].rstrip(":"), dil_sozlugu[dil]["disli_kisim_uzunlugu"].rstrip(":"), dil_sozlugu[dil]["on_yukleme_yuzdesi"].rstrip(":"), dil_sozlugu[dil]["cekme_kuvveti"].rstrip(":")], width=20).pack(side="left", padx=5)
+    ttk.Button(para_graph_frame, text=dil_sozlugu[dil]["grafik_ciz"], command=draw_parametric_graph).pack(side="left", padx=5)
+    ttk.Button(para_graph_frame, text=dil_sozlugu[dil]["optimal_grafik_ciz"], command=draw_optimal_graph).pack(side="left", padx=5)
+
+    para_plot_frame = ttk.LabelFrame(parent, text=dil_sozlugu[dil]["parametrik_grafik"], padding=5)
+    para_plot_frame.pack(fill='both', expand=True, padx=10, pady=5)
+
+# Wiki sekmesi oluşturma
+def create_wiki_frame(parent, dil):
+    wiki_text_widget = tk.Text(parent, wrap="word", state="disabled", bg="#FFFFFF", fg="#333333")
+    wiki_text_widget.pack(fill="both", expand=True, padx=10, pady=10)
+    wiki_scrollbar = ttk.Scrollbar(parent, command=wiki_text_widget.yview)
+    wiki_scrollbar.pack(side="right", fill="y")
+    wiki_text_widget.config(yscrollcommand=wiki_scrollbar.set)
+    render_wiki_text(wiki_text_widget, wiki_text)
+
+# Ayarlar sekmesi oluşturma
+def create_settings_frame(parent, dil, dev_mode):
+    settings_frame = ttk.Frame(parent)
+    settings_frame.pack(fill='both', expand=True, padx=5, pady=5)
+
+    tk.Label(settings_frame, text=dil_sozlugu[dil]["dil_secimi"]).grid(row=0, column=0, padx=5, pady=5)
+    dil_combobox = ttk.Combobox(settings_frame, values=["tr", "en"], state="readonly")
+    dil_combobox.set(dil)
+    dil_combobox.grid(row=0, column=1, padx=5, pady=5)
+
+    tk.Label(settings_frame, text=dil_sozlugu[dil]["gelistirici_modu"]).grid(row=2, column=0, padx=5, pady=5)
+    dev_mode_var = tk.BooleanVar(value=dev_mode)
+    tk.Checkbutton(settings_frame, variable=dev_mode_var).grid(row=2, column=1, padx=5, pady=5)
+
+    def save_settings():
+        new_dil = dil_combobox.get()
+        new_dev_mode = dev_mode_var.get()
+        save_config(new_dil, new_dev_mode)
+        create_all_frames(new_dil, new_dev_mode)
+
+    ttk.Button(settings_frame, text=dil_sozlugu[dil]["kaydet"], command=save_settings, style="Accent.TButton").grid(row=3, column=0, columnspan=2, pady=10)
+
+# Mevcut fonksiyonlar
 def compute_stiffness(bolt_size, L_shank, L_thread, material, preload_percent, F_ext_tensile, F_ext_shear, clamped_parts):
     try:
         if not bolt_size or bolt_size not in bolt_sizes:
@@ -179,7 +639,7 @@ def compute_stiffness(bolt_size, L_shank, L_thread, material, preload_percent, F
         return {'error': str(e)}
 
 def calculate_stiffness():
-    global canvas
+    global canvas, bolt_size_var, shank_length_var, thread_length_var, material_var, preload_percent_var, tensile_force_var, shear_force_var, clamped_parts_frames
     result = compute_stiffness(
         bolt_size_var.get(), shank_length_var.get(), thread_length_var.get(),
         material_var.get(), preload_percent_var.get(), tensile_force_var.get(),
@@ -193,7 +653,7 @@ def calculate_stiffness():
         plot_load_deflection(result)
 
 def plot_load_deflection(result):
-    global canvas
+    global canvas, plot_frame, preload_percent_var, material_var, bolt_size_var
     if canvas:
         canvas.get_tk_widget().destroy()
     fig, ax = plt.subplots(figsize=(4, 3))
@@ -211,26 +671,52 @@ def plot_load_deflection(result):
     canvas.get_tk_widget().pack(fill='both', expand=True)
 
 def add_clamped_part(type='Washer', thickness='', material='Steel', area=''):
+    global clamped_parts_frame
     frame = ttk.Frame(clamped_parts_frame)
     frame.pack(fill='x', pady=2)
     type_var = tk.StringVar(value=type)
     ttk.Combobox(frame, textvariable=type_var, values=['Washer', 'Plate', 'Cylinder'], width=10).pack(side='left', padx=5)
     thickness_var = tk.StringVar(value=thickness)
     tk.Entry(frame, textvariable=thickness_var, width=10).pack(side='left', padx=5)
+    tk.Label(frame, text="Uzunluk (mm)").pack(side='left', padx=5)  # Kalınlık için etiket eklendi
     material_var = tk.StringVar(value=material)
     ttk.Combobox(frame, textvariable=material_var, values=list(materials.keys()), width=15).pack(side='left', padx=5)
     area_var = tk.StringVar(value=area)
     tk.Entry(frame, textvariable=area_var, width=10).pack(side='left', padx=5)
-    ttk.Button(frame, text="Kaldır", command=lambda: remove_clamped_part(frame)).pack(side='left', padx=5)
+    tk.Label(frame, text="Alan (mm²)").pack(side='left', padx=5)
+    ttk.Button(frame, text="Kaldır", command=lambda: remove_clamped_part(frame), style="Danger.TButton").pack(side='left', padx=5)
     clamped_parts_frames.append({'type_var': type_var, 'thickness_var': thickness_var, 'material_var': material_var, 'area_var': area_var})
 
 def remove_clamped_part(frame):
+    global clamped_parts_frames
     frame.destroy()
     clamped_parts_frames[:] = [f for f in clamped_parts_frames if f['thickness_var'].get() != frame.winfo_children()[1].get()]
 
+# Parametrik hesaplama için sıkıştırılan parça ekleme
+def add_param_clamped_part(frame, type='Washer', thickness='', material='Steel', area=''):
+    param_frame = ttk.Frame(frame)
+    param_frame.pack(fill='x', pady=2)
+    type_var = tk.StringVar(value=type)
+    ttk.Combobox(param_frame, textvariable=type_var, values=['Washer', 'Plate', 'Cylinder'], width=10).pack(side='left', padx=5)
+    thickness_var = tk.StringVar(value=thickness)
+    tk.Entry(param_frame, textvariable=thickness_var, width=10).pack(side='left', padx=5)
+    tk.Label(param_frame, text="Uzunluk (mm)").pack(side='left', padx=5)  # Kalınlık için etiket eklendi
+    material_var = tk.StringVar(value=material)
+    ttk.Combobox(param_frame, textvariable=material_var, values=list(materials.keys()), width=15).pack(side='left', padx=5)
+    area_var = tk.StringVar(value=area)
+    tk.Entry(param_frame, textvariable=area_var, width=10).pack(side='left', padx=5)
+    tk.Label(param_frame, text="Alan (mm²)").pack(side='left', padx=5)
+    ttk.Button(param_frame, text="Kaldır", command=lambda: remove_param_clamped_part(param_frame), style="Danger.TButton").pack(side='left', padx=5)
+    parametric_clamped_parts_frames.append({'type_var': type_var, 'thickness_var': thickness_var, 'material_var': material_var, 'area_var': area_var})
+
+def remove_param_clamped_part(frame):
+    global parametric_clamped_parts_frames
+    frame.destroy()
+    parametric_clamped_parts_frames[:] = [f for f in parametric_clamped_parts_frames if f['thickness_var'].get() != frame.winfo_children()[1].get()]
+
 def update_results_table():
+    global results_tree, max_rows_var, results_history, max_rows
     try:
-        global max_rows
         new_max = int(max_rows_var.get())
         if new_max > 0:
             max_rows = new_max
@@ -250,15 +736,14 @@ def update_results_table():
         results_tree.insert("", "end", values=values)
 
 def run_parametric_analysis():
+    global cancel_flag, parametric_results, progress_bar, progress_label, material_var, shear_force_var, parametric_clamped_parts_frames
     cancel_flag.clear()
     parametric_results.clear()
 
-    # Parametrik analizde sıkıştırılan parçalar zorunlu
-    if not clamped_parts_frames:
+    if not parametric_clamped_parts_frames:
         messagebox.showerror("Hata", "Parametrik analiz için en az bir sıkıştırılan parça eklenmelidir!")
         return
 
-    # Giriş verilerini topla
     bolt_size_vals = param_bolt_size_var.get().split(',') if param_bolt_size_var.get() else [bolt_size_var.get()]
     shank_length_vals = param_shank_length_var.get().split(',') if param_shank_length_var.get() else [shank_length_var.get()]
     thread_length_vals = param_thread_length_var.get().split(',') if param_thread_length_var.get() else [thread_length_var.get()]
@@ -282,14 +767,13 @@ def run_parametric_analysis():
     progress_bar['value'] = 0
     progress_label.config(text="Hesaplama: 0% tamamlandı")
 
-    # İş parçacığını başlat
-    worker = threading.Thread(target=parametric_worker, args=(combinations, clamped_parts_frames, material_var.get(), shear_force_var.get()))
+    worker = threading.Thread(target=parametric_worker, args=(combinations, parametric_clamped_parts_frames, material_var.get(), shear_force_var.get()))
     worker.daemon = True
     worker.start()
     root.after(100, check_queue)
 
 def parametric_worker(combinations, clamped_parts, material, F_ext_shear):
-    # SQLite veritabanı bağlantısı iş parçacığı içinde oluşturulmalı
+    global analysis_queue, cancel_flag
     conn = sqlite3.connect(db_path)
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS results (
@@ -333,6 +817,7 @@ def parametric_worker(combinations, clamped_parts, material, F_ext_shear):
     conn.close()
 
 def check_queue():
+    global analysis_queue, progress_bar, progress_label, parametric_results
     try:
         while True:
             msg = analysis_queue.get_nowait()
@@ -357,6 +842,7 @@ def check_queue():
         root.after(100, check_queue)
 
 def load_parametric_results_from_db():
+    global parametric_results
     parametric_results.clear()
     conn = sqlite3.connect(db_path)
     c = conn.cursor()
@@ -365,7 +851,7 @@ def load_parametric_results_from_db():
     headers = ["bolt_size", "shank_length", "thread_length", "preload_percent", "tensile_force",
                "stiffness", "clamped_stiffness", "bolt_force", "bolt_deflection",
                "clamped_deflection", "shear_stress", "safety_factor"]
-    for row in rows[1:]:  # İlk satır ID, atlıyoruz
+    for row in rows[1:]:
         result = {
             'Cıvata Boyutu': row[1], 'Gövde Uzunluğu': row[2], 'Dişli Kısım Uzunluğu': row[3],
             'Ön Yükleme Yüzdesi': row[4], 'Çekme Kuvveti': row[5],
@@ -382,6 +868,7 @@ def cancel_analysis():
     cancel_flag.set()
 
 def update_parametric_results():
+    global para_results_tree, parametric_results, optimal_label, safety_basis_var
     for item in para_results_tree.get_children():
         para_results_tree.delete(item)
     
@@ -408,7 +895,7 @@ def update_parametric_results():
             para_results_tree.insert("", "end", values=values)
 
 def draw_parametric_graph():
-    global para_canvas
+    global para_canvas, para_plot_frame, parametric_results, param_to_graph_var, safety_basis_var
     if not parametric_results:
         messagebox.showwarning("Uyarı", "Önce parametrik analiz yapmalısınız!")
         return
@@ -448,7 +935,7 @@ def draw_parametric_graph():
     para_canvas.get_tk_widget().pack(fill='both', expand=True)
 
 def draw_optimal_graph():
-    global para_canvas
+    global para_canvas, para_plot_frame, parametric_results, safety_basis_var, bolt_size_var, shank_length_var, thread_length_var, preload_percent_var, tensile_force_var, material_var
     if not parametric_results:
         messagebox.showwarning("Uyarı", "Önce parametrik analiz yapmalısınız!")
         return
@@ -498,7 +985,7 @@ def draw_optimal_graph():
     para_canvas.get_tk_widget().pack(fill='both', expand=True)
 
 def clear_inputs():
-    global canvas
+    global canvas, bolt_size_var, shank_length_var, thread_length_var, material_var, preload_percent_var, tensile_force_var, shear_force_var, shear_area_var, safety_basis_var, clamped_parts_frames
     bolt_size_var.set("")
     shank_length_var.set("")
     thread_length_var.set("")
@@ -521,6 +1008,7 @@ def clear_results():
     update_results_table()
 
 def test_values():
+    global bolt_size_var, shank_length_var, thread_length_var, material_var, preload_percent_var, tensile_force_var, shear_force_var, shear_area_var, safety_basis_var
     clear_inputs()
     root.update()
     bolt_size_var.set("M10")
@@ -535,9 +1023,29 @@ def test_values():
     add_clamped_part(type="Plate", thickness="10", material="Steel", area="100")
     add_clamped_part(type="Washer", thickness="5", material="Aluminum", area="80")
     root.update()
-    messagebox.showinfo("Test", "Test değerleri yüklendi. 'Hesapla' butonuna basarak sonuçları görebilirsiniz.")
+    dil, _ = load_config()
+    messagebox.showinfo("Test", dil_sozlugu[dil]["test_degerleri_yuklendi"])
+
+def test_parametric_values():
+    global param_bolt_size_var, param_shank_length_var, param_thread_length_var, param_preload_percent_var, param_tensile_force_var, parametric_clamped_parts_frames
+    # Daha geniş ve zorlayıcı veriler
+    param_bolt_size_var.set("M6,M8,M10")  # M6'dan M10'a kadar
+    param_shank_length_var.set(','.join(map(str, range(10, 51, 5))))  # 10-50, 5 mm adımlarla
+    param_thread_length_var.set("5,10,15,20")  # 5-20, 5 mm adımlarla
+    param_preload_percent_var.set("60,70,80")  # %60-80
+    param_tensile_force_var.set("5000,10000,15000")  # 5000-15000 N
+    # Test için sıkıştırılan parçalar ekle
+    for frame in parametric_clamped_parts_frames[:]:
+        frame['type_var'].master.destroy()
+    parametric_clamped_parts_frames.clear()
+    add_param_clamped_part(parametric_clamped_parts_frame, type="Plate", thickness="10", material="Steel", area="100")
+    add_param_clamped_part(parametric_clamped_parts_frame, type="Washer", thickness="5", material="Aluminum", area="80")
+    root.update()
+    dil, _ = load_config()
+    messagebox.showinfo("Test", dil_sozlugu[dil]["test_degerleri_yuklendi"])
 
 def export_to_excel():
+    global results_history
     if not results_history:
         messagebox.showwarning("Uyarı", "Export edilecek veri yok!")
         return
@@ -548,7 +1056,7 @@ def export_to_excel():
         messagebox.showinfo("Başarılı", f"Veriler '{file_path}' dosyasına kaydedildi.")
 
 def save_material():
-    global current_material
+    global current_material, material_entry, material_var
     name = material_name_var.get().strip()
     try:
         if not name:
@@ -598,7 +1106,7 @@ def new_material():
     clear_material_inputs()
 
 def delete_material():
-    global current_material
+    global current_material, material_tree, materials, material_var
     selected = material_tree.selection()
     if selected:
         name = material_tree.item(selected[0])['values'][0]
@@ -611,7 +1119,7 @@ def delete_material():
             update_material_table()
 
 def on_material_select(event):
-    global current_material
+    global current_material, material_tree
     selected = material_tree.selection()
     if selected:
         name = material_tree.item(selected[0])['values'][0]
@@ -628,6 +1136,7 @@ def on_material_select(event):
             update_material_table()
 
 def clear_material_inputs():
+    global material_name_var, material_E_var, material_yield_var, material_ultimate_var, material_poisson_var, material_elongation_var, material_density_var
     material_name_var.set("")
     material_E_var.set("")
     material_yield_var.set("")
@@ -635,9 +1144,9 @@ def clear_material_inputs():
     material_poisson_var.set("")
     material_elongation_var.set("")
     material_density_var.set("")
-    update_material_table()
 
 def update_material_table():
+    global material_tree, materials
     for item in material_tree.get_children():
         material_tree.delete(item)
     headers = ["Malzeme Adı", "Elastiklik Modülü (GPa)", "Verim Dayanımı (MPa)", "Nihai Dayanım (MPa)", "Poisson Oranı", "Uzama Yüzdesi (%)", "Yoğunluk (g/cm³)"]
@@ -705,8 +1214,8 @@ def render_wiki_text(widget, text):
     for line in lines:
         if line.strip().startswith('#'):
             level = line.count('#')
-            text = line.strip('# ').strip()
-            widget.insert(tk.END, text + '\n', f"h{level}")
+            text_content = line.strip('# ').strip()
+            widget.insert(tk.END, text_content + '\n', f"h{level}")
         elif line.strip().startswith('$$') and line.strip().endswith('$$'):
             latex_text = line.strip().strip('$$').strip()
             try:
@@ -750,14 +1259,15 @@ def define_range(param_var, param_name, is_numeric=True):
             except ValueError as e:
                 messagebox.showerror("Hata", str(e))
         
-        ttk.Button(popup, text="Uygula", command=apply_range).grid(row=3, column=0, columnspan=2, pady=10)
+        ttk.Button(popup, text="Uygula", command=apply_range, style="Accent.TButton").grid(row=3, column=0, columnspan=2, pady=10)
     else:
         tk.Label(popup, text="Değerler (virgülle ayrılmış):").grid(row=0, column=0, padx=5, pady=5)
         list_var = tk.StringVar()
         tk.Entry(popup, textvariable=list_var, width=30).grid(row=0, column=1, padx=5, pady=5)
-        ttk.Button(popup, text="Uygula", command=lambda: [param_var.set(list_var.get()), popup.destroy()]).grid(row=1, column=0, columnspan=2, pady=10)
+        ttk.Button(popup, text="Uygula", command=lambda: [param_var.set(list_var.get()), popup.destroy()], style="Accent.TButton").grid(row=1, column=0, columnspan=2, pady=10)
 
 def export_parametric_to_excel():
+    global parametric_results
     if not parametric_results:
         messagebox.showwarning("Uyarı", "Export edilecek veri yok!")
         return
@@ -771,269 +1281,13 @@ def export_parametric_to_excel():
 root = tk.Tk()
 root.title("Cıvata Sertliği Hesaplayıcısı")
 root.geometry("900x700")
-root.configure(bg="#F0F0F0")
-
-# Tema ayarı
-style = ttk.Style()
-style.theme_use("clam")
-style.configure("TButton", background="#F0F0F0", foreground="#333333", padding=5)
-style.map("TButton", background=[("active", "#E0E0E0")])
-style.configure("TFrame", background="#F0F0F0")
-style.configure("TLabel", background="#F0F0F0", foreground="#333333")
-style.configure("Accent.TButton", background="#4CAF50", foreground="white")
-style.map("Accent.TButton", background=[("active", "#45A049")])
-style.configure("Danger.TButton", background="#F44336", foreground="white")
-style.map("Danger.TButton", background=[("active", "#D32F2F")])
-style.configure("Test.TButton", background="#FF9800", foreground="white")
-style.map("Test.TButton", background=[("active", "#F57C00")])
-style.configure("Export.TButton", background="#3F51B5", foreground="white")
-style.map("Export.TButton", background=[("active", "#303F9F")])
 
 # Notebook
 notebook = ttk.Notebook(root)
 notebook.pack(expand=True, fill='both', padx=10, pady=10)
 
-# Hesaplama sekmesi
-calc_frame = ttk.Frame(notebook)
-notebook.add(calc_frame, text="Hesaplama")
-
-input_frame = ttk.LabelFrame(calc_frame, text="Parametre Tanımlama", padding=5)
-input_frame.pack(side="left", fill='y', padx=5, pady=5)
-
-tk.Label(input_frame, text="Cıvata Boyutu:").grid(row=0, column=0, padx=10, pady=5, sticky="e")
-bolt_size_var = tk.StringVar()
-bolt_size_entry = ttk.Combobox(input_frame, textvariable=bolt_size_var, values=list(bolt_sizes.keys()), width=15)
-bolt_size_entry.grid(row=0, column=1, padx=10, pady=5)
-ToolTip(bolt_size_entry, "Cıvata boyutu, örneğin M10.")
-
-tk.Label(input_frame, text="Gövde Uzunluğu (mm):").grid(row=1, column=0, padx=10, pady=5, sticky="e")
-shank_length_var = tk.StringVar()
-tk.Entry(input_frame, textvariable=shank_length_var, width=20).grid(row=1, column=1, padx=10, pady=5)
-ToolTip(tk.Entry(input_frame, textvariable=shank_length_var), "Cıvatanın düz kısmının uzunluğu (mm).")
-
-tk.Label(input_frame, text="Dişli Kısım Uzunluğu (mm):").grid(row=2, column=0, padx=10, pady=5, sticky="e")
-thread_length_var = tk.StringVar()
-tk.Entry(input_frame, textvariable=thread_length_var, width=20).grid(row=2, column=1, padx=10, pady=5)
-ToolTip(tk.Entry(input_frame, textvariable=thread_length_var), "Dişli kısım uzunluğu, yoksa 0.")
-
-tk.Label(input_frame, text="Malzeme:").grid(row=3, column=0, padx=10, pady=5, sticky="e")
-material_var = tk.StringVar(value='Steel')
-material_entry = ttk.Combobox(input_frame, textvariable=material_var, values=list(materials.keys()), width=18, state="readonly")
-material_entry.grid(row=3, column=1, padx=10, pady=5)
-ToolTip(material_entry, "Cıvata malzemesi, elastiklik modülü ve dayanımı belirler.")
-
-tk.Label(input_frame, text="Ön Yükleme Yüzdesi (%):").grid(row=4, column=0, padx=10, pady=5, sticky="e")
-preload_percent_var = tk.StringVar(value='67')
-tk.Entry(input_frame, textvariable=preload_percent_var, width=20).grid(row=4, column=1, padx=10, pady=5)
-ToolTip(tk.Entry(input_frame, textvariable=preload_percent_var), "Ön yükleme, verim dayanımının yüzdesi (0-100).")
-
-tk.Label(input_frame, text="Çekme Kuvveti (N):").grid(row=5, column=0, padx=10, pady=5, sticky="e")
-tensile_force_var = tk.StringVar()
-tk.Entry(input_frame, textvariable=tensile_force_var, width=20).grid(row=5, column=1, padx=10, pady=5)
-ToolTip(tk.Entry(input_frame, textvariable=tensile_force_var), "Cıvatalı birleşmeye uygulanan çekme kuvveti (N).")
-
-tk.Label(input_frame, text="Kesme Kuvveti (N):").grid(row=6, column=0, padx=10, pady=5, sticky="e")
-shear_force_var = tk.StringVar()
-tk.Entry(input_frame, textvariable=shear_force_var, width=20).grid(row=6, column=1, padx=10, pady=5)
-ToolTip(tk.Entry(input_frame, textvariable=shear_force_var), "Cıvatalı birleşmeye yanlara uygulanan kesme kuvveti (N).")
-
-shear_frame = ttk.LabelFrame(input_frame, text="Kesme Alanı", padding=2)
-shear_frame.grid(row=7, column=0, columnspan=2, pady=5)
-shear_area_var = tk.StringVar(value="Thread")
-ttk.Radiobutton(shear_frame, text="Gövde", variable=shear_area_var, value="Shank").pack(side="left", padx=2)
-ttk.Radiobutton(shear_frame, text="Dişli", variable=shear_area_var, value="Thread").pack(side="left", padx=2)
-
-safety_frame = ttk.LabelFrame(input_frame, text="Güvenlik Faktörü", padding=2)
-safety_frame.grid(row=8, column=0, columnspan=2, pady=5)
-safety_basis_var = tk.StringVar(value="Yield")
-ttk.Radiobutton(safety_frame, text="Verim", variable=safety_basis_var, value="Yield").pack(side="left", padx=2)
-ttk.Radiobutton(safety_frame, text="Nihai", variable=safety_basis_var, value="Ultimate").pack(side="left", padx=2)
-
-clamped_parts_frame = ttk.Frame(input_frame)
-clamped_parts_frame.grid(row=9, column=0, columnspan=2, pady=5)
-ttk.Button(input_frame, text="Parça Ekle", command=add_clamped_part, style="Accent.TButton").grid(row=10, column=0, columnspan=2, pady=5)
-
-button_frame = ttk.Frame(input_frame)
-button_frame.grid(row=11, column=0, columnspan=2, pady=10)
-ttk.Button(button_frame, text="Hesapla", command=calculate_stiffness, style="Accent.TButton").pack(side="left", padx=5)
-ttk.Button(button_frame, text="Temizle", command=clear_inputs, style="Danger.TButton").pack(side="left", padx=5)
-ttk.Button(button_frame, text="Test", command=test_values, style="Test.TButton").pack(side="left", padx=5)
-
-right_frame = ttk.Frame(calc_frame)
-right_frame.pack(side="right", fill='both', expand=True, padx=10, pady=5)
-
-result_frame = ttk.LabelFrame(right_frame, text="Sonuçlar Tablosu", padding=5)
-result_frame.pack(fill='x', pady=5)
-rows_frame = ttk.Frame(result_frame)
-rows_frame.pack(fill='x', pady=5)
-tk.Label(rows_frame, text="Gösterilecek Hesaplama Sayısı:").pack(side="left", padx=5)
-max_rows_var = tk.StringVar(value=str(max_rows))
-tk.Entry(rows_frame, textvariable=max_rows_var, width=5).pack(side="left", padx=5)
-ttk.Button(rows_frame, text="Güncelle", command=update_results_table).pack(side="left", padx=5)
-ttk.Button(rows_frame, text="Excel'e Aktar", command=export_to_excel, style="Export.TButton").pack(side="left", padx=5)
-ttk.Button(rows_frame, text="Temizle", command=clear_results, style="Danger.TButton").pack(side="left", padx=5)
-
-results_tree = ttk.Treeview(result_frame, height=7, show="headings")
-results_tree.pack(fill='x')
-scrollbar = ttk.Scrollbar(result_frame, orient="horizontal", command=results_tree.xview)
-scrollbar.pack(side="bottom", fill="x")
-results_tree.configure(xscrollcommand=scrollbar.set)
-
-plot_frame = ttk.LabelFrame(right_frame, text="Yük-Çarpılma Eğrisi", padding=5)
-plot_frame.pack(fill='both', expand=True)
-
-# Malzeme Kütüphanesi sekmesi
-material_frame = ttk.Frame(notebook)
-notebook.add(material_frame, text="Malzeme Kütüphanesi")
-
-material_input_frame = ttk.Frame(material_frame)
-material_input_frame.pack(fill='both', expand=True, padx=5, pady=5)
-
-input_subframe = ttk.Frame(material_input_frame)
-input_subframe.pack(fill='x', pady=5)
-
-tk.Label(input_subframe, text="Malzeme Adı *:").grid(row=0, column=0, padx=5, pady=2, sticky="e")
-material_name_var = tk.StringVar()
-material_name_entry = tk.Entry(input_subframe, textvariable=material_name_var, width=20)
-material_name_entry.grid(row=0, column=1, padx=5, pady=2)
-ToolTip(material_name_entry, "Malzeme adı, örneğin '316 Stainless Steel'.")
-
-tk.Label(input_subframe, text="Elastiklik Modülü (GPa) *:").grid(row=1, column=0, padx=5, pady=2, sticky="e")
-material_E_var = tk.StringVar()
-material_E_entry = tk.Entry(input_subframe, textvariable=material_E_var, width=20)
-material_E_entry.grid(row=1, column=1, padx=5, pady=2)
-ToolTip(material_E_entry, "Malzemenin elastiklik modülü (GPa), örneğin 200.")
-
-tk.Label(input_subframe, text="Verim Dayanımı (MPa) *:").grid(row=2, column=0, padx=5, pady=2, sticky="e")
-material_yield_var = tk.StringVar()
-material_yield_entry = tk.Entry(input_subframe, textvariable=material_yield_var, width=20)
-material_yield_entry.grid(row=2, column=1, padx=5, pady=2)
-ToolTip(material_yield_entry, "Malzemenin verim dayanımı (MPa), örneğin 200.")
-
-tk.Label(input_subframe, text="Nihai Dayanım (MPa) *:").grid(row=3, column=0, padx=5, pady=2, sticky="e")
-material_ultimate_var = tk.StringVar()
-material_ultimate_entry = tk.Entry(input_subframe, textvariable=material_ultimate_var, width=20)
-material_ultimate_entry.grid(row=3, column=1, padx=5, pady=2)
-ToolTip(material_ultimate_entry, "Malzemenin nihai dayanımı (MPa), örneğin 530.")
-
-tk.Label(input_subframe, text="Poisson Oranı:").grid(row=4, column=0, padx=5, pady=2, sticky="e")
-material_poisson_var = tk.StringVar()
-material_poisson_entry = tk.Entry(input_subframe, textvariable=material_poisson_var, width=20)
-material_poisson_entry.grid(row=4, column=1, padx=5, pady=2)
-ToolTip(material_poisson_entry, "Malzemenin Poisson oranı, örneğin 0.28.")
-
-tk.Label(input_subframe, text="Uzama Yüzdesi (%):").grid(row=5, column=0, padx=5, pady=2, sticky="e")
-material_elongation_var = tk.StringVar()
-material_elongation_entry = tk.Entry(input_subframe, textvariable=material_elongation_var, width=20)
-material_elongation_entry.grid(row=5, column=1, padx=5, pady=2)
-ToolTip(material_elongation_entry, "Malzemenin uzama yüzdesi, örneğin 40.")
-
-tk.Label(input_subframe, text="Yoğunluk (g/cm³):").grid(row=6, column=0, padx=5, pady=2, sticky="e")
-material_density_var = tk.StringVar()
-material_density_entry = tk.Entry(input_subframe, textvariable=material_density_var, width=20)
-material_density_entry.grid(row=6, column=1, padx=5, pady=2)
-ToolTip(material_density_entry, "Malzemenin yoğunluğu (g/cm³), örneğin 8.0.")
-
-material_tree_frame = ttk.LabelFrame(material_input_frame, text="Malzeme Özellikleri", padding=5)
-material_tree_frame.pack(fill='both', expand=True, pady=5)
-material_tree = ttk.Treeview(material_tree_frame, show="headings")
-material_tree.pack(fill='both', expand=True)
-scrollbar = ttk.Scrollbar(material_tree_frame, orient="vertical", command=material_tree.yview)
-scrollbar.pack(side="right", fill="y")
-material_tree.configure(yscrollcommand=scrollbar.set)
-material_tree.bind('<<TreeviewSelect>>', on_material_select)
-update_material_table()
-
-material_button_frame = ttk.Frame(material_input_frame)
-material_button_frame.pack(fill='x', pady=5)
-ttk.Button(material_button_frame, text="Kaydet", command=save_material, style="Accent.TButton").pack(side="left", padx=5)
-ttk.Button(material_button_frame, text="Yeni", command=new_material, style="TButton").pack(side="left", padx=5)
-ttk.Button(material_button_frame, text="Sil", command=delete_material, style="Danger.TButton").pack(side="left", padx=5)
-
-# Parametrik Hesaplama sekmesi
-parametric_frame = ttk.Frame(notebook)
-notebook.add(parametric_frame, text="Parametrik Hesaplama")
-
-para_input_frame = ttk.LabelFrame(parametric_frame, text="Parametre Tanımlama", padding=5)
-para_input_frame.pack(side="left", fill='y', padx=5, pady=5)
-
-tk.Label(para_input_frame, text="Cıvata Boyutu:").grid(row=0, column=0, padx=5, pady=5)
-param_bolt_size_var = tk.StringVar()
-param_bolt_size_entry = tk.Entry(para_input_frame, textvariable=param_bolt_size_var, width=20)
-param_bolt_size_entry.grid(row=0, column=1, padx=5)
-ttk.Button(para_input_frame, text="Tanımla", command=lambda: define_range(param_bolt_size_var, "Cıvata Boyutu", False)).grid(row=0, column=2, padx=5)
-ToolTip(param_bolt_size_entry, "örn: M6,M8,M10")
-
-tk.Label(para_input_frame, text="Gövde Uzunluğu (mm):").grid(row=1, column=0, padx=5, pady=5)
-param_shank_length_var = tk.StringVar()
-param_shank_length_entry = tk.Entry(para_input_frame, textvariable=param_shank_length_var, width=20)
-param_shank_length_entry.grid(row=1, column=1, padx=5)
-ttk.Button(para_input_frame, text="Tanımla", command=lambda: define_range(param_shank_length_var, "Gövde Uzunluğu")).grid(row=1, column=2, padx=5)
-ToolTip(param_shank_length_entry, "örn: 20,30,40 veya 10-20 adım 2")
-
-tk.Label(para_input_frame, text="Dişli Kısım Uzunluğu (mm):").grid(row=2, column=0, padx=5, pady=5)
-param_thread_length_var = tk.StringVar()
-param_thread_length_entry = tk.Entry(para_input_frame, textvariable=param_thread_length_var, width=20)
-param_thread_length_entry.grid(row=2, column=1, padx=5)
-ttk.Button(para_input_frame, text="Tanımla", command=lambda: define_range(param_thread_length_var, "Dişli Kısım Uzunluğu")).grid(row=2, column=2, padx=5)
-ToolTip(param_thread_length_entry, "örn: 10,15,20 veya 10-20 adım 5")
-
-tk.Label(para_input_frame, text="Ön Yükleme Yüzdesi (%):").grid(row=3, column=0, padx=5, pady=5)
-param_preload_percent_var = tk.StringVar()
-param_preload_percent_entry = tk.Entry(para_input_frame, textvariable=param_preload_percent_var, width=20)
-param_preload_percent_entry.grid(row=3, column=1, padx=5)
-ttk.Button(para_input_frame, text="Tanımla", command=lambda: define_range(param_preload_percent_var, "Ön Yükleme Yüzdesi")).grid(row=3, column=2, padx=5)
-ToolTip(param_preload_percent_entry, "örn: 60,70,80 veya 50-90 adım 10")
-
-tk.Label(para_input_frame, text="Çekme Kuvveti (N):").grid(row=4, column=0, padx=5, pady=5)
-param_tensile_force_var = tk.StringVar()
-param_tensile_force_entry = tk.Entry(para_input_frame, textvariable=param_tensile_force_var, width=20)
-param_tensile_force_entry.grid(row=4, column=1, padx=5)
-ttk.Button(para_input_frame, text="Tanımla", command=lambda: define_range(param_tensile_force_var, "Çekme Kuvveti")).grid(row=4, column=2, padx=5)
-ToolTip(param_tensile_force_entry, "örn: 5000,10000 veya 5000-15000 adım 5000")
-
-ttk.Button(para_input_frame, text="Hesapla", command=run_parametric_analysis, style="Accent.TButton").grid(row=5, column=0, columnspan=3, pady=5)
-ttk.Button(para_input_frame, text="İptal Et", command=cancel_analysis).grid(row=6, column=0, columnspan=3, pady=5)
-
-progress_bar = ttk.Progressbar(parametric_frame, length=300)
-progress_bar.pack(pady=5)
-progress_label = ttk.Label(parametric_frame, text="Hesaplama: 0% tamamlandı")
-progress_label.pack(pady=5)
-
-optimal_frame = ttk.LabelFrame(parametric_frame, text="En Optimal Kombinasyon", padding=5)
-optimal_frame.pack(side="right", fill='y', padx=5, pady=5)
-optimal_label = ttk.Label(optimal_frame, text="En Optimal Kombinasyon: Henüz hesaplanmadı")
-optimal_label.pack(pady=5)
-
-para_results_frame = ttk.LabelFrame(parametric_frame, text="Parametrik Sonuçlar", padding=5)
-para_results_frame.pack(fill='x', padx=10, pady=5)
-para_results_tree = ttk.Treeview(para_results_frame, show="headings", height=7)
-para_results_tree.pack(fill='x')
-para_scrollbar = ttk.Scrollbar(para_results_frame, orient="horizontal", command=para_results_tree.xview)
-para_scrollbar.pack(side="bottom", fill="x")
-para_results_tree.configure(xscrollcommand=para_scrollbar.set)
-ttk.Button(para_results_frame, text="Excel'e Aktar", command=export_parametric_to_excel, style="Export.TButton").pack(pady=5)
-
-para_graph_frame = ttk.Frame(para_results_frame)
-para_graph_frame.pack(fill='x', pady=5)
-tk.Label(para_graph_frame, text="Grafik Parametresi:").pack(side="left", padx=5)
-param_to_graph_var = tk.StringVar()
-ttk.Combobox(para_graph_frame, textvariable=param_to_graph_var, values=['Cıvata Boyutu', 'Gövde Uzunluğu', 'Dişli Kısım Uzunluğu', 'Ön Yükleme Yüzdesi', 'Çekme Kuvveti'], width=20).pack(side="left", padx=5)
-ttk.Button(para_graph_frame, text="Grafik Çiz", command=draw_parametric_graph).pack(side="left", padx=5)
-ttk.Button(para_graph_frame, text="Optimal Grafik Çiz", command=draw_optimal_graph).pack(side="left", padx=5)
-
-para_plot_frame = ttk.LabelFrame(parametric_frame, text="Parametrik Grafik", padding=5)
-para_plot_frame.pack(fill='both', expand=True, padx=10, pady=5)
-
-# Wiki sekmesi
-wiki_frame = ttk.Frame(notebook)
-notebook.add(wiki_frame, text="Bilgi")
-
-wiki_text_widget = tk.Text(wiki_frame, wrap="word", state="disabled", bg="#FFFFFF", fg="#333333")
-wiki_text_widget.pack(fill="both", expand=True, padx=10, pady=10)
-wiki_scrollbar = ttk.Scrollbar(wiki_frame, command=wiki_text_widget.yview)
-wiki_scrollbar.pack(side="right", fill="y")
-wiki_text_widget.config(yscrollcommand=wiki_scrollbar.set)
-render_wiki_text(wiki_text_widget, wiki_text)
+# Program başlangıcında ayarları yükle
+dil, dev_mode = load_config()
+create_all_frames(dil, dev_mode)
 
 root.mainloop()
